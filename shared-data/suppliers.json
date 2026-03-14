@@ -1,0 +1,440 @@
+[
+  {
+    "code": "SUP-001",
+    "name": "ИП Морозов",
+    "items": [
+      {
+        "barcode": "4610000000007",
+        "name": "Рис длиннозерный 900 г",
+        "price": 129.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000014",
+        "name": "Гречка ядрица 800 г",
+        "price": 94.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000021",
+        "name": "Макароны спагетти 450 г",
+        "price": 72.3,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000038",
+        "name": "Макароны перья 450 г",
+        "price": 70.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000045",
+        "name": "Мука пшеничная 2 кг",
+        "price": 118.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000052",
+        "name": "Сахар белый 1 кг",
+        "price": 79.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000069",
+        "name": "Соль поваренная 1 кг",
+        "price": 28.6,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000076",
+        "name": "Овсяные хлопья 500 г",
+        "price": 63.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000083",
+        "name": "Горох колотый 800 г",
+        "price": 68.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000090",
+        "name": "Чечевица красная 800 г",
+        "price": 136.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000106",
+        "name": "Фасоль белая 800 г",
+        "price": 122.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000113",
+        "name": "Масло подсолнечное 1 л",
+        "price": 149.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000120",
+        "name": "Чай черный 100 пакетов",
+        "price": 219.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000137",
+        "name": "Кофе молотый 250 г",
+        "price": 289.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000144",
+        "name": "Печенье сахарное 300 г",
+        "price": 84.7,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000151",
+        "name": "Крекер соленый 250 г",
+        "price": 77.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000168",
+        "name": "Шоколад темный 90 г",
+        "price": 96.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000175",
+        "name": "Какао-порошок 100 г",
+        "price": 110.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000182",
+        "name": "Сгущенное молоко 380 г",
+        "price": 102.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000199",
+        "name": "Томатная паста 270 г",
+        "price": 88.5,
+        "isActive": true,
+        "source": "manual_seed"
+      }
+    ]
+  },
+  {
+    "code": "SUP-002",
+    "name": "ООО Север Фуд",
+    "items": [
+      {
+        "barcode": "4610000000205",
+        "name": "Молоко 3.2% 1 л",
+        "price": 89.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000212",
+        "name": "Кефир 2.5% 930 мл",
+        "price": 82.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000229",
+        "name": "Ряженка 4% 500 мл",
+        "price": 69.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000236",
+        "name": "Йогурт питьевой клубника 290 г",
+        "price": 57.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000243",
+        "name": "Сметана 20% 300 г",
+        "price": 74.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000250",
+        "name": "Творог 5% 180 г",
+        "price": 81.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000267",
+        "name": "Сыр гауда 200 г",
+        "price": 214.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000274",
+        "name": "Масло сливочное 82.5% 180 г",
+        "price": 176.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000281",
+        "name": "Сок яблочный 1 л",
+        "price": 112.3,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000298",
+        "name": "Сок апельсиновый 1 л",
+        "price": 119.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000304",
+        "name": "Вода негазированная 1.5 л",
+        "price": 39.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000311",
+        "name": "Вода газированная 1.5 л",
+        "price": 41.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000328",
+        "name": "Лимонад классический 1 л",
+        "price": 73.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000335",
+        "name": "Кола 1 л",
+        "price": 95.6,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000342",
+        "name": "Энергетический напиток 0.45 л",
+        "price": 109.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000359",
+        "name": "Морс клюквенный 0.95 л",
+        "price": 128.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000366",
+        "name": "Сливки 10% 200 мл",
+        "price": 59.7,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000373",
+        "name": "Питьевой йогурт без сахара 250 г",
+        "price": 61.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000380",
+        "name": "Сыр плавленый сливочный 150 г",
+        "price": 92.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000397",
+        "name": "Молочный коктейль ваниль 0.25 л",
+        "price": 66.4,
+        "isActive": true,
+        "source": "manual_seed"
+      }
+    ]
+  },
+  {
+    "code": "SUP-003",
+    "name": "ТД Вектор",
+    "items": [
+      {
+        "barcode": "4610000000403",
+        "name": "Кукуруза сладкая 340 г",
+        "price": 95.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000410",
+        "name": "Горошек зеленый 400 г",
+        "price": 88.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000427",
+        "name": "Тунец консервированный 185 г",
+        "price": 164.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000434",
+        "name": "Сардины в масле 240 г",
+        "price": 119.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000441",
+        "name": "Шпроты 160 г",
+        "price": 142.3,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000458",
+        "name": "Фасоль в томатном соусе 400 г",
+        "price": 86.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000465",
+        "name": "Огурцы маринованные 680 г",
+        "price": 138.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000472",
+        "name": "Томаты в собственном соку 720 мл",
+        "price": 154.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000489",
+        "name": "Лечо овощное 520 г",
+        "price": 99.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000496",
+        "name": "Кетчуп томатный 350 г",
+        "price": 87.7,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000502",
+        "name": "Майонез провансаль 390 мл",
+        "price": 96.6,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000519",
+        "name": "Горчица русская 140 г",
+        "price": 43.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000526",
+        "name": "Хрен столовый 140 г",
+        "price": 58.2,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000533",
+        "name": "Чипсы картофельные сыр 140 г",
+        "price": 128.5,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000540",
+        "name": "Сухарики ржаные чеснок 100 г",
+        "price": 49.8,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000557",
+        "name": "Орехи арахис жареный 150 г",
+        "price": 84.3,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000564",
+        "name": "Фисташки соленые 100 г",
+        "price": 156.0,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000571",
+        "name": "Семечки подсолнечника 200 г",
+        "price": 74.9,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000588",
+        "name": "Попкорн сладкий 90 г",
+        "price": 67.4,
+        "isActive": true,
+        "source": "manual_seed"
+      },
+      {
+        "barcode": "4610000000595",
+        "name": "Соус соевый 250 мл",
+        "price": 92.1,
+        "isActive": true,
+        "source": "manual_seed"
+      }
+    ]
+  }
+]

@@ -1,0 +1,296 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: #0b0e12;
+  color: #edf2f7;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input {
+  font: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+}
+
+.sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: #090c10;
+}
+
+.logo {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 28px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.navItem {
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: #a9b4c3;
+  background: transparent;
+}
+
+.navItemActive {
+  background: rgba(67, 224, 145, 0.12);
+  color: #e8fff4;
+  border: 1px solid rgba(67, 224, 145, 0.35);
+}
+
+.profileStub {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 18px;
+  background: #11161d;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #43e091, #59b1ff);
+}
+
+.storeName {
+  font-weight: 600;
+}
+
+.storeEmail {
+  color: #8b97a8;
+  font-size: 13px;
+}
+
+.workspace {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.topBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.topBar h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.muted {
+  color: #90a0b5;
+}
+
+.settingsSecret {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: #121821;
+  color: #d5deea;
+  cursor: pointer;
+}
+
+.panel {
+  background: #11161d;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  padding: 18px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.panelHeader h2, .panel h2, .panel h3 {
+  margin: 0;
+}
+
+.uploadPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.uploadBox {
+  border: 1px dashed rgba(67, 224, 145, 0.45);
+  border-radius: 16px;
+  padding: 20px;
+  background: rgba(67, 224, 145, 0.05);
+}
+
+.uploadTitle {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 12px;
+}
+
+.primaryButton,
+.ghostButton,
+.linkLike {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: none;
+  background: #43e091;
+  color: #08250f;
+  font-weight: 700;
+}
+
+.primaryButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.ghostButton, .linkLike {
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: #e8eef7;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.settingsGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cfd9e6;
+}
+
+.settingsGrid input {
+  background: #0b0f14;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #f2f6fb;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.statCard {
+  background: #0b0f14;
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.statLabel {
+  color: #8b97a8;
+  font-size: 13px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+th, td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+th {
+  color: #8b97a8;
+  font-weight: 600;
+}
+
+.supplierBlock {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.supplierHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.emptyState {
+  padding: 14px;
+  border-radius: 14px;
+  background: #0b0f14;
+  color: #c9d5e4;
+}
+
+.errorBox {
+  background: rgba(255, 85, 85, 0.12);
+  border: 1px solid rgba(255, 85, 85, 0.4);
+  color: #ffb9b9;
+  padding: 12px 14px;
+  border-radius: 14px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .settingsGrid, .stats {
+    grid-template-columns: 1fr;
+  }
+}
