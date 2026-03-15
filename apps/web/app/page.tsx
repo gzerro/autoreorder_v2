@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
+
+type PageKey = 'main' | 'history' | 'suppliers';
 
 type Settings = {
   coverageDays: number;
@@ -12,6 +14,14 @@ type Settings = {
   deliveryDate: string;
 };
 
+type OrderItem = {
+  barcode: string;
+  name: string;
+  soldQty: number;
+  orderQty: number;
+  price: number;
+};
+
 type SupplierResult = {
   code: string;
   name: string;
@@ -20,13 +30,15 @@ type SupplierResult = {
   totalOrderQty: number;
   downloadFileName: string;
   downloadUrl: string;
-  orderItems: Array<{
-    barcode: string;
-    name: string;
-    soldQty: number;
-    orderQty: number;
-    price: number;
-  }>;
+  orderItems: OrderItem[];
+};
+
+type RunSummary = {
+  totalRows: number;
+  uniqueBarcodes: number;
+  matchedBarcodes: number;
+  unknownBarcodes: number;
+  suppliersWithOrders: number;
 };
 
 type RunResult = {
@@ -39,13 +51,8 @@ type RunResult = {
     end: string | null;
     days: number;
   };
-  summary: {
-    totalRows: number;
-    uniqueBarcodes: number;
-    matchedBarcodes: number;
-    unknownBarcodes: number;
-    suppliersWithOrders: number;
-  };
+  settings: Settings;
+  summary: RunSummary;
   suppliers: SupplierResult[];
   unknownItems: Array<{
     barcode: string;
@@ -54,272 +61,265 @@ type RunResult = {
   }>;
 };
 
+type HistoryItem = {
+  runId: string;
+  sourceFileName: string;
+  status: 'processing' | 'completed' | 'failed';
+  createdAt: string;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  generatedAt: string | null;
+  summary: RunSummary | null;
+  suppliersCount: number;
+  unknownItemsCount: number;
+  sourceDownloadUrl: string;
+  errorMessage: string | null;
+};
+
+type HistoryRunDetail = {
+  historyMeta: HistoryItem;
+  result: RunResult | null;
+};
+
+type SupplierSeed = {
+  code: string;
+  name: string;
+  items: Array<{
+    barcode: string;
+    name: string;
+    price: number;
+    isActive?: boolean;
+    source?: string;
+  }>;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
-export default function HomePage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<RunResult | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<Settings>({
-    coverageDays: 7,
-    salesMultiplier: 1,
-    reserveUnits: 0,
-    packSize: 1,
-    minOrderQty: 1,
-    buyerName: 'Магазин Ромашка',
-    deliveryDate: '',
-  });
-  const [error, setError] = useState<string>('');
+const INITIAL_SETTINGS: Settings = {
+  coverageDays: 7,
+  salesMultiplier: 1,
+  reserveUnits: 0,
+  packSize: 1,
+  minOrderQty: 1,
+  buyerName: 'Магазин Ромашка',
+  deliveryDate: '',
+};
 
-  const sourceDownloadHref = useMemo(() => {
-    if (!result) return '';
-    return `${API_URL}${result.sourceDownloadUrl}`;
-  }, [result]);
-
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!file) {
-      setError('Сначала выберите iiko-файл.');
-      return;
-    }
-
-    setError('');
-    setIsLoading(true);
-    setResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('settings', JSON.stringify(settings));
-
-      const response = await fetch(`${API_URL}/autozakaz/iiko/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || 'Ошибка загрузки');
-      }
-
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Неизвестная ошибка');
-    } finally {
-      setIsLoading(false);
-    }
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return '—';
   }
 
-  function change<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setSettings((prev) => ({ ...prev, [key]: value }));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('ru-RU');
+}
+
+function formatDuration(value: number | null): string {
+  if (value === null || Number.isNaN(value)) {
+    return '—';
+  }
+
+  if (value < 1000) {
+    return `${value} мс`;
+  }
+
+  return `${(value / 1000).toFixed(2)} сек`;
+}
+
+async function readApiError(response: Response): Promise<string> {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json()) as {
+      message?: string | string[];
+      error?: string;
+    };
+
+    if (Array.isArray(payload.message)) {
+      return payload.message.join(', ');
+    }
+
+    return payload.message || payload.error || 'Ошибка запроса';
+  }
+
+  const text = await response.text();
+  return text || 'Ошибка запроса';
+}
+
+function normalizeRunDetail(payload: unknown): HistoryRunDetail {
+  const data = payload as Partial<HistoryRunDetail> & Partial<RunResult>;
+
+  if (data.historyMeta) {
+    return data as HistoryRunDetail;
+  }
+
+  const legacy = data as RunResult;
+
+  return {
+    historyMeta: {
+      runId: legacy.runId,
+      sourceFileName: legacy.sourceFileName,
+      status: 'completed',
+      createdAt: legacy.generatedAt,
+      startedAt: legacy.generatedAt,
+      finishedAt: legacy.generatedAt,
+      durationMs: null,
+      generatedAt: legacy.generatedAt,
+      summary: legacy.summary,
+      suppliersCount: legacy.suppliers?.length ?? 0,
+      unknownItemsCount: legacy.unknownItems?.length ?? 0,
+      sourceDownloadUrl: legacy.sourceDownloadUrl,
+      errorMessage: null,
+    },
+    result: legacy,
+  };
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: HistoryItem['status'];
+}) {
+  const label =
+    status === 'completed'
+      ? 'Готово'
+      : status === 'failed'
+      ? 'Ошибка'
+      : 'В обработке';
+
+  return <span className={`status-badge status-${status}`}>{label}</span>;
+}
+
+function ResultView({
+  detail,
+}: {
+  detail: HistoryRunDetail;
+}) {
+  const historyMeta = detail?.historyMeta;
+  const result = detail?.result ?? null;
+
+  if (!historyMeta) {
+    return (
+      <div className="result-card">
+        <div className="error-box">
+          Результат расчёта пришёл в неожиданном формате. Проверьте перезапуск API.
+        </div>
+      </div>
+    );
   }
 
   return (
-    <main className="page">
-      <aside className="sidebar">
+    <div className="result-card">
+      <div className="result-header">
         <div>
-          <div className="logo">Автозаказ Про</div>
-          <nav className="nav">
-            <div className="navItem navItemActive">Главная</div>
-            <div className="navItem">История</div>
-            <div className="navItem">Поставщики</div>
-          </nav>
+          <h2>Прогон {historyMeta.runId.slice(0, 8)}</h2>
+          <p className="muted">{historyMeta.sourceFileName}</p>
         </div>
+        <StatusBadge status={historyMeta.status} />
+      </div>
 
-        <div className="profileStub">
-          <div className="avatar" />
-          <div>
-            <div className="storeName">Магазин Ромашка</div>
-            <div className="storeEmail">тестовый режим</div>
-          </div>
+      <div className="meta-grid">
+        <div>
+          <div className="meta-label">Создан</div>
+          <div>{formatDateTime(historyMeta.createdAt)}</div>
         </div>
-      </aside>
-
-      <section className="workspace">
-        <div className="topBar">
-          <div>
-            <h1>Загрузка продаж iiko</h1>
-            <p className="muted">
-              Загрузите XLSX-файл, программа сверит штрихкоды с известными поставщиками
-              и соберёт документы заказа.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="settingsSecret"
-            onDoubleClick={() => setSettingsOpen((prev) => !prev)}
-            title="Дважды нажмите, чтобы открыть настройки"
-          >
-            □
-          </button>
+        <div>
+          <div className="meta-label">Длительность</div>
+          <div>{formatDuration(historyMeta.durationMs)}</div>
         </div>
+        <div>
+          <div className="meta-label">Не найдено</div>
+          <div>{historyMeta.unknownItemsCount}</div>
+        </div>
+        <div>
+          <div className="meta-label">Поставщиков с заказом</div>
+          <div>{historyMeta.suppliersCount}</div>
+        </div>
+      </div>
 
-        {settingsOpen && (
-          <div className="panel">
-            <div className="panelHeader">
-              <h2>Настройки автозаказа</h2>
-              <button type="button" className="ghostButton" onClick={() => setSettingsOpen(false)}>
-                Закрыть
-              </button>
-            </div>
+      <div className="toolbar">
+        <a
+          className="link-button"
+          href={`${API_URL}${historyMeta.sourceDownloadUrl}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Скачать исходный файл
+        </a>
+      </div>
 
-            <div className="settingsGrid">
-              <label>
-                Заказ на дней
-                <input
-                  type="number"
-                  min={1}
-                  value={settings.coverageDays}
-                  onChange={(e) => change('coverageDays', Number(e.target.value))}
-                />
-              </label>
+      {historyMeta.errorMessage && (
+        <div className="error-box">{historyMeta.errorMessage}</div>
+      )}
 
-              <label>
-                Множитель продаж
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={settings.salesMultiplier}
-                  onChange={(e) => change('salesMultiplier', Number(e.target.value))}
-                />
-              </label>
+      {!result && (
+        <div className="empty-box">
+          Для этого прогона нет готового результата. Обычно так выглядит
+          неуспешный или ещё не завершённый расчёт.
+        </div>
+      )}
 
-              <label>
-                Резерв штук
-                <input
-                  type="number"
-                  min={0}
-                  value={settings.reserveUnits}
-                  onChange={(e) => change('reserveUnits', Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Кратность упаковки
-                <input
-                  type="number"
-                  min={1}
-                  value={settings.packSize}
-                  onChange={(e) => change('packSize', Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Минимальный заказ
-                <input
-                  type="number"
-                  min={1}
-                  value={settings.minOrderQty}
-                  onChange={(e) => change('minOrderQty', Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Покупатель
-                <input
-                  type="text"
-                  value={settings.buyerName}
-                  onChange={(e) => change('buyerName', e.target.value)}
-                />
-              </label>
-
-              <label>
-                Дата поставки
-                <input
-                  type="date"
-                  value={settings.deliveryDate}
-                  onChange={(e) => change('deliveryDate', e.target.value)}
-                />
-              </label>
-            </div>
-          </div>
-        )}
-
-        <form className="panel uploadPanel" onSubmit={handleSubmit}>
-          <div className="uploadBox">
-            <div className="uploadTitle">Формат: iiko (.xlsx)</div>
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-            <div className="muted">
-              {file ? `Выбран файл: ${file.name}` : 'Файл пока не выбран'}
-            </div>
-          </div>
-
-          <div className="buttonRow">
-            <button className="primaryButton" type="submit" disabled={isLoading}>
-              {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
-            </button>
-          </div>
-
-          {error && <div className="errorBox">{error}</div>}
-        </form>
-
-        {result && (
-          <>
-            <div className="panel">
-              <div className="panelHeader">
-                <h2>Сводка</h2>
-                <a className="ghostButton linkLike" href={sourceDownloadHref}>
-                  Скачать исходный файл
-                </a>
-              </div>
-
-              <div className="stats">
-                <div className="statCard">
-                  <span className="statLabel">Период</span>
-                  <strong>
-                    {result.period.start || '—'} → {result.period.end || '—'}
-                  </strong>
-                  <span className="muted">{result.period.days} дней</span>
-                </div>
-                <div className="statCard">
-                  <span className="statLabel">Уникальных штрихкодов</span>
-                  <strong>{result.summary.uniqueBarcodes}</strong>
-                </div>
-                <div className="statCard">
-                  <span className="statLabel">Найдено</span>
-                  <strong>{result.summary.matchedBarcodes}</strong>
-                </div>
-                <div className="statCard">
-                  <span className="statLabel">Не найдено</span>
-                  <strong>{result.summary.unknownBarcodes}</strong>
+      {result && (
+        <>
+          <section className="section-block">
+            <h3>Сводка</h3>
+            <div className="meta-grid">
+              <div>
+                <div className="meta-label">Период</div>
+                <div>
+                  {result.period.start || '—'} → {result.period.end || '—'}
                 </div>
               </div>
+              <div>
+                <div className="meta-label">Дней</div>
+                <div>{result.period.days}</div>
+              </div>
+              <div>
+                <div className="meta-label">Уникальных штрихкодов</div>
+                <div>{result.summary.uniqueBarcodes}</div>
+              </div>
+              <div>
+                <div className="meta-label">Найдено</div>
+                <div>{result.summary.matchedBarcodes}</div>
+              </div>
             </div>
+          </section>
 
-            <div className="panel">
-              <h2>Документы заказа по поставщикам</h2>
+          <section className="section-block">
+            <h3>Документы заказа по поставщикам</h3>
 
-              {result.suppliers.length === 0 && (
-                <div className="emptyState">Ни один поставщик не получил заказ. Возможно, все штрихкоды неизвестны.</div>
-              )}
-
-              {result.suppliers.map((supplier) => (
-                <div className="supplierBlock" key={supplier.code}>
-                  <div className="supplierHeader">
+            {result.suppliers.length === 0 ? (
+              <div className="empty-box">
+                Ни один поставщик не получил заказ. Тут табличная пустыня.
+              </div>
+            ) : (
+              result.suppliers.map((supplier) => (
+                <div key={supplier.code} className="supplier-card">
+                  <div className="supplier-header">
                     <div>
-                      <h3>{supplier.name}</h3>
-                      <div className="muted">
-                        {supplier.itemsCount} позиций · заказ {supplier.totalOrderQty} шт.
-                      </div>
+                      <h4>{supplier.name}</h4>
+                      <p className="muted">
+                        {supplier.itemsCount} позиций · заказ{' '}
+                        {supplier.totalOrderQty} шт.
+                      </p>
                     </div>
 
                     <a
-                      className="primaryButton linkLike"
+                      className="link-button"
                       href={`${API_URL}${supplier.downloadUrl}`}
+                      target="_blank"
+                      rel="noreferrer"
                     >
                       Скачать Excel
                     </a>
                   </div>
 
-                  <div className="tableWrap">
+                  <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
@@ -344,40 +344,809 @@ export default function HomePage() {
                     </table>
                   </div>
                 </div>
-              ))}
-            </div>
+              ))
+            )}
+          </section>
 
-            <div className="panel">
-              <h2>Товары без найденного поставщика</h2>
+          <section className="section-block">
+            <h3>Товары без найденного поставщика</h3>
 
-              {result.unknownItems.length === 0 ? (
-                <div className="emptyState">Все штрихкоды нашлись у известных поставщиков. Красота.</div>
-              ) : (
-                <div className="tableWrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Штрихкод</th>
-                        <th>Товар</th>
-                        <th>Продано</th>
+            {result.unknownItems.length === 0 ? (
+              <div className="empty-box">
+                Все штрихкоды нашлись у известных поставщиков. Красота.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Штрихкод</th>
+                      <th>Товар</th>
+                      <th>Продано</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.unknownItems.map((item) => (
+                      <tr key={`${item.barcode}-${item.name}`}>
+                        <td>{item.barcode}</td>
+                        <td>{item.name}</td>
+                        <td>{item.soldQty}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {result.unknownItems.map((item) => (
-                        <tr key={`unknown-${item.barcode}`}>
-                          <td>{item.barcode}</td>
-                          <td>{item.name}</td>
-                          <td>{item.soldQty}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const [activePage, setActivePage] = useState<PageKey>('main');
+  const [file, setFile] = useState<File | null>(null);
+  const [currentRun, setCurrentRun] = useState<HistoryRunDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<Settings>(INITIAL_SETTINGS);
+  const [error, setError] = useState('');
+
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(
+    null,
+  );
+  const [selectedHistoryRun, setSelectedHistoryRun] =
+    useState<HistoryRunDetail | null>(null);
+
+  const [suppliers, setSuppliers] = useState<SupplierSeed[]>([]);
+  const [suppliersLoading, setSuppliersLoading] = useState(false);
+  const [suppliersError, setSuppliersError] = useState('');
+
+  const change = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const loadHistoryRun = useCallback(async (runId: string) => {
+    setSelectedHistoryRunId(runId);
+    setHistoryError('');
+
+    try {
+      const response = await fetch(`${API_URL}/autozakaz/history/${runId}`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const raw = await response.json();
+      const data = normalizeRunDetail(raw);
+      setSelectedHistoryRun(data);
+    } catch (loadError) {
+      setHistoryError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Не удалось загрузить детали истории',
+      );
+    }
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError('');
+
+    try {
+      const response = await fetch(`${API_URL}/autozakaz/history`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const data = (await response.json()) as HistoryItem[];
+      setHistoryItems(data);
+
+      const runIdToOpen =
+        selectedHistoryRunId && data.some((item) => item.runId === selectedHistoryRunId)
+          ? selectedHistoryRunId
+          : data[0]?.runId;
+
+      if (runIdToOpen) {
+        await loadHistoryRun(runIdToOpen);
+      } else {
+        setSelectedHistoryRun(null);
+        setSelectedHistoryRunId(null);
+      }
+    } catch (loadError) {
+      setHistoryError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Не удалось загрузить историю',
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [loadHistoryRun, selectedHistoryRunId]);
+
+  const loadSuppliers = useCallback(async () => {
+    setSuppliersLoading(true);
+    setSuppliersError('');
+
+    try {
+      const response = await fetch(`${API_URL}/autozakaz/suppliers`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const data = (await response.json()) as SupplierSeed[];
+      setSuppliers(data);
+    } catch (loadError) {
+      setSuppliersError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Не удалось загрузить поставщиков',
+      );
+    } finally {
+      setSuppliersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activePage === 'history') {
+      void loadHistory();
+    }
+
+    if (activePage === 'suppliers' && suppliers.length === 0) {
+      void loadSuppliers();
+    }
+  }, [activePage, loadHistory, loadSuppliers, suppliers.length]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!file) {
+      setError('Сначала выберите iiko-файл.');
+      return;
+    }
+
+    setError('');
+    setIsLoading(true);
+    setCurrentRun(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('settings', JSON.stringify(settings));
+
+      const response = await fetch(`${API_URL}/autozakaz/iiko/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const raw = await response.json();
+      const data = normalizeRunDetail(raw);
+
+      setCurrentRun(data);
+      setSelectedHistoryRunId(data.historyMeta.runId);
+      await loadHistory();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : 'Неизвестная ошибка',
+      );
+      await loadHistory();
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div>
+          <div className="logo">Автозаказ Про</div>
+
+          <nav className="nav">
+            <button
+              type="button"
+              className={activePage === 'main' ? 'nav-item active' : 'nav-item'}
+              onClick={() => setActivePage('main')}
+            >
+              Главная
+            </button>
+            <button
+              type="button"
+              className={activePage === 'history' ? 'nav-item active' : 'nav-item'}
+              onClick={() => setActivePage('history')}
+            >
+              История
+            </button>
+            <button
+              type="button"
+              className={activePage === 'suppliers' ? 'nav-item active' : 'nav-item'}
+              onClick={() => setActivePage('suppliers')}
+            >
+              Поставщики
+            </button>
+          </nav>
+        </div>
+
+        <div className="profile-box">
+          <div className="avatar" />
+          <div>
+            <div>Магазин Ромашка</div>
+            <div className="muted">тестовый режим</div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="workspace">
+        {activePage === 'main' && (
+          <>
+            <div className="workspace-header">
+              <div>
+                <h1>Загрузка продаж iiko</h1>
+                <p className="muted">
+                  Загрузите XLSX-файл, программа сверит штрихкоды с известными
+                  поставщиками и соберёт документы заказа.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="settings-toggle"
+                onDoubleClick={() => setSettingsOpen((prev) => !prev)}
+                title="Дважды нажмите, чтобы открыть настройки"
+              >
+                □
+              </button>
             </div>
+
+            {settingsOpen && (
+              <div className="card">
+                <div className="card-header">
+                  <h2>Настройки автозаказа</h2>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setSettingsOpen(false)}
+                  >
+                    Закрыть
+                  </button>
+                </div>
+
+                <div className="settings-grid">
+                  <label>
+                    Заказ на дней
+                    <input
+                      type="number"
+                      value={settings.coverageDays}
+                      onChange={(e) =>
+                        change('coverageDays', Number(e.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Множитель продаж
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={settings.salesMultiplier}
+                      onChange={(e) =>
+                        change('salesMultiplier', Number(e.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Резерв штук
+                    <input
+                      type="number"
+                      value={settings.reserveUnits}
+                      onChange={(e) =>
+                        change('reserveUnits', Number(e.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Кратность упаковки
+                    <input
+                      type="number"
+                      value={settings.packSize}
+                      onChange={(e) => change('packSize', Number(e.target.value))}
+                    />
+                  </label>
+
+                  <label>
+                    Минимальный заказ
+                    <input
+                      type="number"
+                      value={settings.minOrderQty}
+                      onChange={(e) =>
+                        change('minOrderQty', Number(e.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Покупатель
+                    <input
+                      type="text"
+                      value={settings.buyerName}
+                      onChange={(e) => change('buyerName', e.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    Дата поставки
+                    <input
+                      type="date"
+                      value={settings.deliveryDate}
+                      onChange={(e) => change('deliveryDate', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <form className="card" onSubmit={handleSubmit}>
+              <div className="card-header">
+                <h2>Формат: iiko (.xlsx)</h2>
+              </div>
+
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+
+              <div className="muted">
+                {file ? `Выбран файл: ${file.name}` : 'Файл пока не выбран'}
+              </div>
+
+              <button type="submit" className="primary-button" disabled={isLoading}>
+                {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
+              </button>
+
+              {error && <div className="error-box">{error}</div>}
+            </form>
+
+            {currentRun && <ResultView detail={currentRun} />}
           </>
         )}
-      </section>
-    </main>
+
+        {activePage === 'history' && (
+          <>
+            <div className="workspace-header">
+              <div>
+                <h1>История</h1>
+                <p className="muted">
+                  Здесь лежат все прогоны автозаказа: исходные файлы, документы и
+                  детали расчёта.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void loadHistory()}
+              >
+                Обновить
+              </button>
+            </div>
+
+            {historyError && <div className="error-box">{historyError}</div>}
+
+            {historyLoading && <div className="card">Загружаю историю…</div>}
+
+            {!historyLoading && historyItems.length === 0 && (
+              <div className="card">Здесь пока пусто.</div>
+            )}
+
+            {!historyLoading && historyItems.length > 0 && (
+              <div className="history-layout">
+                <div className="history-list">
+                  {historyItems.map((item) => (
+                    <button
+                      type="button"
+                      key={item.runId}
+                      className={
+                        selectedHistoryRunId === item.runId
+                          ? 'history-item active'
+                          : 'history-item'
+                      }
+                      onClick={() => void loadHistoryRun(item.runId)}
+                    >
+                      <div className="history-item-top">
+                        <strong>{item.sourceFileName}</strong>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div className="muted">
+                        {formatDateTime(item.createdAt)}
+                      </div>
+                      <div className="history-item-meta">
+                        <span>Длительность: {formatDuration(item.durationMs)}</span>
+                        <span>Не найдено: {item.unknownItemsCount}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="history-detail">
+                  {selectedHistoryRun ? (
+                    <ResultView detail={selectedHistoryRun} />
+                  ) : (
+                    <div className="card">Выберите прогон из списка слева.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {activePage === 'suppliers' && (
+          <>
+            <div className="workspace-header">
+              <div>
+                <h1>Поставщики</h1>
+                <p className="muted">
+                  Пока это встроенные тестовые поставщики, чтобы гонять прототип
+                  без стека авторизации.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void loadSuppliers()}
+              >
+                Обновить
+              </button>
+            </div>
+
+            {suppliersError && <div className="error-box">{suppliersError}</div>}
+            {suppliersLoading && <div className="card">Загружаю поставщиков…</div>}
+
+            {!suppliersLoading && (
+              <div className="suppliers-grid">
+                {suppliers.map((supplier) => (
+                  <div key={supplier.code} className="card">
+                    <h3>{supplier.name}</h3>
+                    <div className="muted">{supplier.code}</div>
+                    <div className="supplier-stats">
+                      Позиций в каталоге: {supplier.items.length}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      <style jsx>{`
+        .app-shell {
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 260px 1fr;
+          background: #0f172a;
+          color: #e5e7eb;
+        }
+
+        .sidebar {
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          padding: 24px 16px;
+          border-right: 1px solid rgba(255, 255, 255, 0.08);
+          background: #111827;
+        }
+
+        .logo {
+          font-size: 24px;
+          font-weight: 700;
+          margin-bottom: 24px;
+        }
+
+        .nav {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .nav-item {
+          padding: 12px 14px;
+          border-radius: 12px;
+          border: none;
+          background: transparent;
+          color: #e5e7eb;
+          text-align: left;
+          cursor: pointer;
+          font-size: 15px;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        .profile-box {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.05);
+        }
+
+        .avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #34d399, #60a5fa);
+        }
+
+        .workspace {
+          padding: 24px;
+        }
+
+        .workspace-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 20px;
+        }
+
+        .settings-toggle,
+        .primary-button,
+        .secondary-button,
+        .link-button {
+          border-radius: 12px;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+          text-decoration: none;
+        }
+
+        .settings-toggle {
+          width: 44px;
+          height: 44px;
+          background: #1f2937;
+          color: #e5e7eb;
+        }
+
+        .primary-button {
+          background: #22c55e;
+          color: #0b1220;
+          padding: 12px 16px;
+          font-weight: 700;
+        }
+
+        .primary-button:disabled {
+          opacity: 0.7;
+          cursor: wait;
+        }
+
+        .secondary-button,
+        .link-button {
+          background: #1f2937;
+          color: #e5e7eb;
+          padding: 10px 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .card,
+        .result-card,
+        .history-item,
+        .supplier-card {
+          background: #111827;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 16px;
+          padding: 18px;
+        }
+
+        .card,
+        .result-card {
+          margin-bottom: 16px;
+        }
+
+        .card-header,
+        .supplier-header,
+        .result-header,
+        .history-item-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .settings-grid,
+        .meta-grid,
+        .suppliers-grid {
+          display: grid;
+          gap: 12px;
+        }
+
+        .settings-grid {
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          margin-top: 12px;
+        }
+
+        .suppliers-grid {
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        label {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          font-size: 14px;
+        }
+
+        input {
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: #0f172a;
+          color: #e5e7eb;
+          padding: 10px 12px;
+        }
+
+        .muted {
+          color: #94a3b8;
+          font-size: 14px;
+        }
+
+        .error-box,
+        .empty-box {
+          margin-top: 12px;
+          padding: 12px 14px;
+          border-radius: 12px;
+        }
+
+        .error-box {
+          background: rgba(239, 68, 68, 0.14);
+          color: #fecaca;
+        }
+
+        .empty-box {
+          background: rgba(255, 255, 255, 0.04);
+          color: #cbd5e1;
+        }
+
+        .status-badge {
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .status-completed {
+          background: rgba(34, 197, 94, 0.18);
+          color: #86efac;
+        }
+
+        .status-failed {
+          background: rgba(239, 68, 68, 0.18);
+          color: #fca5a5;
+        }
+
+        .status-processing {
+          background: rgba(59, 130, 246, 0.18);
+          color: #93c5fd;
+        }
+
+        .meta-grid {
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          margin-top: 12px;
+        }
+
+        .meta-label {
+          color: #94a3b8;
+          font-size: 12px;
+          margin-bottom: 4px;
+        }
+
+        .toolbar {
+          margin-top: 14px;
+          margin-bottom: 8px;
+        }
+
+        .section-block {
+          margin-top: 18px;
+        }
+
+        .table-wrap {
+          overflow-x: auto;
+          margin-top: 12px;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        th,
+        td {
+          text-align: left;
+          padding: 10px 12px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          white-space: nowrap;
+          font-size: 14px;
+        }
+
+        th {
+          color: #94a3b8;
+          font-weight: 600;
+        }
+
+        .history-layout {
+          display: grid;
+          grid-template-columns: 360px 1fr;
+          gap: 16px;
+        }
+
+        .history-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .history-item {
+          width: 100%;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .history-item.active {
+          border-color: rgba(96, 165, 250, 0.65);
+          box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35);
+        }
+
+        .history-item-meta {
+          margin-top: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          color: #cbd5e1;
+          font-size: 13px;
+        }
+
+        .supplier-card {
+          margin-top: 14px;
+        }
+
+        .supplier-stats {
+          margin-top: 10px;
+          color: #cbd5e1;
+        }
+
+        @media (max-width: 1100px) {
+          .app-shell {
+            grid-template-columns: 1fr;
+          }
+
+          .sidebar {
+            border-right: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          }
+
+          .history-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
