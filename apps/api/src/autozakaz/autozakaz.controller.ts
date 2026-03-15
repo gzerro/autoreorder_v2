@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Param,
@@ -8,7 +9,6 @@ import {
   Res,
   UploadedFile,
   UseInterceptors,
-  Body,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -27,6 +27,16 @@ export class AutozakazController {
   @Get('suppliers')
   async suppliers() {
     return this.autozakazService.getSuppliers();
+  }
+
+  @Get('history')
+  async history() {
+    return this.autozakazService.listHistory();
+  }
+
+  @Get('history/:runId')
+  async historyRun(@Param('runId') runId: string) {
+    return this.autozakazService.getHistoryRun(runId);
   }
 
   @Post('iiko/upload')
@@ -64,7 +74,10 @@ export class AutozakazController {
     @Param('supplierCode') supplierCode: string,
     @Res() res: Response,
   ) {
-    const file = await this.autozakazService.resolveOrderFile(runId, supplierCode);
+    const file = await this.autozakazService.resolveOrderFile(
+      runId,
+      supplierCode,
+    );
     return res.download(file.absolutePath, file.downloadName);
   }
 

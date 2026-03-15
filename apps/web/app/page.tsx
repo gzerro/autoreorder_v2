@@ -389,6 +389,7 @@ export default function HomePage() {
   const [file, setFile] = useState<File | null>(null);
   const [currentRun, setCurrentRun] = useState<HistoryRunDetail | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(INITIAL_SETTINGS);
   const [error, setError] = useState('');
@@ -503,6 +504,49 @@ export default function HomePage() {
     }
   }, [activePage, loadHistory, loadSuppliers, suppliers.length]);
 
+  async function handleClearHistory() {
+    const confirmed = window.confirm(
+      'Очистить всю историю автозаказа? Будут удалены все прогоны и все связанные файлы.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsClearingHistory(true);
+    setError('');
+    setHistoryError('');
+
+    try {
+      const response = await fetch(`${API_URL}/autozakaz/history`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setHistoryItems([]);
+      setSelectedHistoryRun(null);
+      setSelectedHistoryRunId(null);
+      setCurrentRun(null);
+
+      if (activePage === 'history') {
+        await loadHistory();
+      }
+    } catch (clearError) {
+      const message =
+        clearError instanceof Error
+          ? clearError.message
+          : 'Не удалось очистить историю';
+
+      setError(message);
+      setHistoryError(message);
+    } finally {
+      setIsClearingHistory(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -534,14 +578,20 @@ export default function HomePage() {
 
       setCurrentRun(data);
       setSelectedHistoryRunId(data.historyMeta.runId);
-      await loadHistory();
+
+      if (activePage === 'history') {
+        await loadHistory();
+      }
     } catch (submitError) {
       setError(
         submitError instanceof Error
           ? submitError.message
           : 'Неизвестная ошибка',
       );
-      await loadHistory();
+
+      if (activePage === 'history') {
+        await loadHistory();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -694,6 +744,17 @@ export default function HomePage() {
                       onChange={(e) => change('deliveryDate', e.target.value)}
                     />
                   </label>
+                </div>
+
+                <div className="settings-actions">
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => void handleClearHistory()}
+                    disabled={isClearingHistory}
+                  >
+                    {isClearingHistory ? 'Очищаю историю…' : 'Очистить историю'}
+                  </button>
                 </div>
               </div>
             )}
@@ -910,7 +971,8 @@ export default function HomePage() {
         .settings-toggle,
         .primary-button,
         .secondary-button,
-        .link-button {
+        .link-button,
+        .danger-button {
           border-radius: 12px;
           border: none;
           cursor: pointer;
@@ -945,6 +1007,20 @@ export default function HomePage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+        }
+
+        .danger-button {
+          background: rgba(239, 68, 68, 0.18);
+          color: #fecaca;
+          padding: 10px 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .danger-button:disabled {
+          opacity: 0.7;
+          cursor: wait;
         }
 
         .card,
@@ -982,6 +1058,12 @@ export default function HomePage() {
         .settings-grid {
           grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           margin-top: 12px;
+        }
+
+        .settings-actions {
+          margin-top: 16px;
+          display: flex;
+          justify-content: flex-end;
         }
 
         .suppliers-grid {
