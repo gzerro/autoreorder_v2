@@ -155,7 +155,9 @@ export class AutozakazService {
     return this.decorateRunResult(result);
   }
 
-  private async readRunMeta(runId: string): Promise<AutozakazHistoryItem | null> {
+  private async readRunMeta(
+    runId: string,
+  ): Promise<AutozakazHistoryItem | null> {
     const metaPath = this.getRunMetaPath(runId);
 
     if (await this.pathExists(metaPath)) {

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseFilePipeBuilder,
@@ -37,6 +38,11 @@ export class AutozakazController {
   @Get('history/:runId')
   async historyRun(@Param('runId') runId: string) {
     return this.autozakazService.getHistoryRun(runId);
+  }
+
+  @Delete('history')
+  async clearHistory() {
+    return this.autozakazService.clearHistory();
   }
 
   @Post('iiko/upload')
@@ -82,10 +88,7 @@ export class AutozakazController {
   }
 
   @Get('runs/:runId/source')
-  async downloadSource(
-    @Param('runId') runId: string,
-    @Res() res: Response,
-  ) {
+  async downloadSource(@Param('runId') runId: string, @Res() res: Response) {
     const file = await this.autozakazService.resolveSourceFile(runId);
     return res.download(file.absolutePath, file.downloadName);
   }
