@@ -207,7 +207,8 @@ function ResultView({
     return (
       <div className="result-card">
         <div className="error-box">
-          Результат расчёта пришёл в неожиданном формате. Проверьте перезапуск API.
+          Результат расчёта пришёл в неожиданном формате. Проверьте перезапуск
+          API.
         </div>
       </div>
     );
@@ -397,9 +398,9 @@ export default function HomePage() {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(
-    null,
-  );
+  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<
+    string | null
+  >(null);
   const [selectedHistoryRun, setSelectedHistoryRun] =
     useState<HistoryRunDetail | null>(null);
 
@@ -450,7 +451,8 @@ export default function HomePage() {
       setHistoryItems(data);
 
       const runIdToOpen =
-        selectedHistoryRunId && data.some((item) => item.runId === selectedHistoryRunId)
+        selectedHistoryRunId &&
+        data.some((item) => item.runId === selectedHistoryRunId)
           ? selectedHistoryRunId
           : data[0]?.runId;
 
@@ -613,14 +615,18 @@ export default function HomePage() {
             </button>
             <button
               type="button"
-              className={activePage === 'history' ? 'nav-item active' : 'nav-item'}
+              className={
+                activePage === 'history' ? 'nav-item active' : 'nav-item'
+              }
               onClick={() => setActivePage('history')}
             >
               История
             </button>
             <button
               type="button"
-              className={activePage === 'suppliers' ? 'nav-item active' : 'nav-item'}
+              className={
+                activePage === 'suppliers' ? 'nav-item active' : 'nav-item'
+              }
               onClick={() => setActivePage('suppliers')}
             >
               Поставщики
@@ -753,7 +759,9 @@ export default function HomePage() {
                     onClick={() => void handleClearHistory()}
                     disabled={isClearingHistory}
                   >
-                    {isClearingHistory ? 'Очищаю историю…' : 'Очистить историю'}
+                    {isClearingHistory
+                      ? 'Очищаю историю…'
+                      : 'Очистить историю'}
                   </button>
                 </div>
               </div>
@@ -774,7 +782,11 @@ export default function HomePage() {
                 {file ? `Выбран файл: ${file.name}` : 'Файл пока не выбран'}
               </div>
 
-              <button type="submit" className="primary-button" disabled={isLoading}>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={isLoading}
+              >
                 {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
               </button>
 
@@ -846,7 +858,9 @@ export default function HomePage() {
                   {selectedHistoryRun ? (
                     <ResultView detail={selectedHistoryRun} />
                   ) : (
-                    <div className="card">Выберите прогон из списка слева.</div>
+                    <div className="card">
+                      Выберите прогон из списка слева.
+                    </div>
                   )}
                 </div>
               </div>
@@ -875,7 +889,9 @@ export default function HomePage() {
             </div>
 
             {suppliersError && <div className="error-box">{suppliersError}</div>}
-            {suppliersLoading && <div className="card">Загружаю поставщиков…</div>}
+            {suppliersLoading && (
+              <div className="card">Загружаю поставщиков…</div>
+            )}
 
             {!suppliersLoading && (
               <div className="suppliers-grid">
@@ -916,6 +932,7 @@ export default function HomePage() {
           font-size: 24px;
           font-weight: 700;
           margin-bottom: 24px;
+          color: #f8fafc;
         }
 
         .nav {
@@ -966,6 +983,14 @@ export default function HomePage() {
           justify-content: space-between;
           gap: 16px;
           margin-bottom: 20px;
+        }
+
+        .workspace h1,
+        .workspace h2,
+        .workspace h3,
+        .workspace h4,
+        .workspace strong {
+          color: #f8fafc;
         }
 
         .settings-toggle,
@@ -1031,6 +1056,7 @@ export default function HomePage() {
           border: 1px solid rgba(255, 255, 255, 0.08);
           border-radius: 16px;
           padding: 18px;
+          color: #e5e7eb;
         }
 
         .card,
@@ -1075,6 +1101,7 @@ export default function HomePage() {
           flex-direction: column;
           gap: 8px;
           font-size: 14px;
+          color: #e5e7eb;
         }
 
         input {
@@ -1112,6 +1139,7 @@ export default function HomePage() {
           border-radius: 999px;
           font-size: 12px;
           font-weight: 700;
+          white-space: nowrap;
         }
 
         .status-completed {
@@ -1166,6 +1194,7 @@ export default function HomePage() {
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           white-space: nowrap;
           font-size: 14px;
+          color: #e5e7eb;
         }
 
         th {
@@ -1189,6 +1218,11 @@ export default function HomePage() {
           width: 100%;
           text-align: left;
           cursor: pointer;
+          color: #e5e7eb;
+        }
+
+        .history-item strong {
+          color: #f8fafc;
         }
 
         .history-item.active {
