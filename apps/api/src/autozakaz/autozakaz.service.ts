@@ -57,12 +57,28 @@ export class AutozakazService {
     }
   }
 
-  private decodeUploadedFileName(fileName: string): string {
-    try {
-      return Buffer.from(fileName, 'latin1').toString('utf8');
-    } catch {
-      return fileName;
+  private looksLikeMojibake(value: string): boolean {
+    return /Ð|Ñ/.test(value);
+  }
+
+  private normalizeFileName(value: string): string {
+    if (!value) {
+      return value;
     }
+
+    if (!this.looksLikeMojibake(value)) {
+      return value;
+    }
+
+    try {
+      return Buffer.from(value, 'latin1').toString('utf8');
+    } catch {
+      return value;
+    }
+  }
+
+  private decodeUploadedFileName(fileName: string): string {
+    return this.normalizeFileName(fileName);
   }
 
   private getRunsDir(): string {
@@ -103,6 +119,7 @@ export class AutozakazService {
   ): AutozakazRunResultWithDownloads {
     return {
       ...result,
+      sourceFileName: this.normalizeFileName(result.sourceFileName),
       suppliers: result.suppliers.map((supplier) => ({
         ...supplier,
         downloadUrl: `/autozakaz/runs/${result.runId}/orders/${supplier.code}`,
@@ -147,6 +164,7 @@ export class AutozakazService {
 
       return {
         ...meta,
+        sourceFileName: this.normalizeFileName(meta.sourceFileName),
         sourceDownloadUrl:
           meta.sourceDownloadUrl || `/autozakaz/runs/${runId}/source`,
         suppliersCount:
@@ -168,7 +186,7 @@ export class AutozakazService {
 
     return {
       runId,
-      sourceFileName: result.sourceFileName,
+      sourceFileName: this.normalizeFileName(result.sourceFileName),
       status: 'completed',
       createdAt: result.generatedAt,
       startedAt: result.generatedAt,
@@ -254,6 +272,21 @@ export class AutozakazService {
     return {
       historyMeta,
       result,
+    };
+  }
+
+  async clearHistory(): Promise<{ ok: true; cleared: boolean }> {
+    const runsDir = this.getRunsDir();
+
+    if (await this.pathExists(runsDir)) {
+      await fs.rm(runsDir, { recursive: true, force: true });
+    }
+
+    await fs.mkdir(runsDir, { recursive: true });
+
+    return {
+      ok: true,
+      cleared: true,
     };
   }
 
@@ -372,7 +405,7 @@ export class AutozakazService {
 
     return {
       absolutePath: join(runDir, source),
-      downloadName: source,
+      downloadName: this.normalizeFileName(source),
     };
   }
 
