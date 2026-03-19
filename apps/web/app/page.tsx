@@ -200,6 +200,23 @@ function ResultView({
 }: {
   detail: HistoryRunDetail;
 }) {
+  const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(
+    new Set(),
+  );
+  const [unknownExpanded, setUnknownExpanded] = useState(false);
+
+  const toggleSupplier = (code: string) => {
+    setExpandedSuppliers((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
+
   const historyMeta = detail?.historyMeta;
   const result = detail?.result ?? null;
 
@@ -302,24 +319,85 @@ function ResultView({
               result.suppliers.map((supplier) => (
                 <div key={supplier.code} className="supplier-card">
                   <div className="supplier-header">
-                    <div>
-                      <h4>{supplier.name}</h4>
-                      <p className="muted">
-                        {supplier.itemsCount} позиций · заказ{' '}
-                        {supplier.totalOrderQty} шт.
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      className="supplier-toggle"
+                      onClick={() => toggleSupplier(supplier.code)}
+                    >
+                      <span className="toggle-icon">
+                        {expandedSuppliers.has(supplier.code) ? '▼' : '▶'}
+                      </span>
+                      <div>
+                        <h4>{supplier.name}</h4>
+                        <p className="muted">
+                          {supplier.itemsCount} позиций · заказ{' '}
+                          {supplier.totalOrderQty} шт.
+                        </p>
+                      </div>
+                    </button>
 
                     <a
-                      className="link-button"
+                      className="excel-button"
                       href={`${API_URL}${supplier.downloadUrl}`}
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Скачать Excel
+                      ⬇ Скачать Excel
                     </a>
                   </div>
 
+                  {expandedSuppliers.has(supplier.code) && (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Штрихкод</th>
+                            <th>Товар</th>
+                            <th>Продано</th>
+                            <th>К заказу</th>
+                            <th>Цена</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {supplier.orderItems.map((item) => (
+                            <tr key={`${supplier.code}-${item.barcode}`}>
+                              <td>{item.barcode}</td>
+                              <td>{item.name}</td>
+                              <td>{item.soldQty}</td>
+                              <td>{item.orderQty}</td>
+                              <td>{item.price.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+
+          <section className="section-block">
+            <button
+              type="button"
+              className="supplier-toggle section-toggle"
+              onClick={() => setUnknownExpanded((prev) => !prev)}
+            >
+              <span className="toggle-icon">
+                {unknownExpanded ? '▼' : '▶'}
+              </span>
+              <h3>
+                Товары без найденного поставщика ({result.unknownItems.length})
+              </h3>
+            </button>
+
+            {unknownExpanded && (
+              <>
+                {result.unknownItems.length === 0 ? (
+                  <div className="empty-box">
+                    Все штрихкоды нашлись у известных поставщиков. Красота.
+                  </div>
+                ) : (
                   <div className="table-wrap">
                     <table>
                       <thead>
@@ -327,56 +405,21 @@ function ResultView({
                           <th>Штрихкод</th>
                           <th>Товар</th>
                           <th>Продано</th>
-                          <th>К заказу</th>
-                          <th>Цена</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {supplier.orderItems.map((item) => (
-                          <tr key={`${supplier.code}-${item.barcode}`}>
+                        {result.unknownItems.map((item) => (
+                          <tr key={`${item.barcode}-${item.name}`}>
                             <td>{item.barcode}</td>
                             <td>{item.name}</td>
                             <td>{item.soldQty}</td>
-                            <td>{item.orderQty}</td>
-                            <td>{item.price.toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              ))
-            )}
-          </section>
-
-          <section className="section-block">
-            <h3>Товары без найденного поставщика</h3>
-
-            {result.unknownItems.length === 0 ? (
-              <div className="empty-box">
-                Все штрихкоды нашлись у известных поставщиков. Красота.
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Штрихкод</th>
-                      <th>Товар</th>
-                      <th>Продано</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.unknownItems.map((item) => (
-                      <tr key={`${item.barcode}-${item.name}`}>
-                        <td>{item.barcode}</td>
-                        <td>{item.name}</td>
-                        <td>{item.soldQty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                )}
+              </>
             )}
           </section>
         </>
@@ -385,15 +428,42 @@ function ResultView({
   );
 }
 
+function Toast({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  if (!message) return null;
+
+  return (
+    <div className="toast-overlay" onClick={onClose}>
+      <div className="toast-box" onClick={(e) => e.stopPropagation()}>
+        <div className="toast-emoji">🚧</div>
+        <div className="toast-text">{message}</div>
+        <button type="button" className="toast-close" onClick={onClose}>
+          Понятно
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [activePage, setActivePage] = useState<PageKey>('main');
   const [file, setFile] = useState<File | null>(null);
-  const [currentRun, setCurrentRun] = useState<HistoryRunDetail | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isClearingHistory, setIsClearingHistory] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(INITIAL_SETTINGS);
   const [error, setError] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
 
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -531,7 +601,6 @@ export default function HomePage() {
       setHistoryItems([]);
       setSelectedHistoryRun(null);
       setSelectedHistoryRunId(null);
-      setCurrentRun(null);
 
       if (activePage === 'history') {
         await loadHistory();
@@ -559,7 +628,6 @@ export default function HomePage() {
 
     setError('');
     setIsLoading(true);
-    setCurrentRun(null);
 
     try {
       const formData = new FormData();
@@ -578,22 +646,16 @@ export default function HomePage() {
       const raw = await response.json();
       const data = normalizeRunDetail(raw);
 
-      setCurrentRun(data);
       setSelectedHistoryRunId(data.historyMeta.runId);
-
-      if (activePage === 'history') {
-        await loadHistory();
-      }
+      setSelectedHistoryRun(data);
+      setFile(null);
+      setActivePage('history');
     } catch (submitError) {
       setError(
         submitError instanceof Error
           ? submitError.message
           : 'Неизвестная ошибка',
       );
-
-      if (activePage === 'history') {
-        await loadHistory();
-      }
     } finally {
       setIsLoading(false);
     }
@@ -648,10 +710,9 @@ export default function HomePage() {
           <>
             <div className="workspace-header">
               <div>
-                <h1>Загрузка продаж iiko</h1>
+                <h1>Загрузите продажи и получите автозаказ по вашим поставщикам</h1>
                 <p className="muted">
-                  Загрузите XLSX-файл, программа сверит штрихкоды с известными
-                  поставщиками и соберёт документы заказа.
+                  Выберите формат данных из вашей учётной системы
                 </p>
               </div>
 
@@ -689,7 +750,6 @@ export default function HomePage() {
                       }
                     />
                   </label>
-
                   <label>
                     Множитель продаж
                     <input
@@ -701,7 +761,6 @@ export default function HomePage() {
                       }
                     />
                   </label>
-
                   <label>
                     Резерв штук
                     <input
@@ -712,7 +771,6 @@ export default function HomePage() {
                       }
                     />
                   </label>
-
                   <label>
                     Кратность упаковки
                     <input
@@ -721,7 +779,6 @@ export default function HomePage() {
                       onChange={(e) => change('packSize', Number(e.target.value))}
                     />
                   </label>
-
                   <label>
                     Минимальный заказ
                     <input
@@ -732,7 +789,6 @@ export default function HomePage() {
                       }
                     />
                   </label>
-
                   <label>
                     Покупатель
                     <input
@@ -741,7 +797,6 @@ export default function HomePage() {
                       onChange={(e) => change('buyerName', e.target.value)}
                     />
                   </label>
-
                   <label>
                     Дата поставки
                     <input
@@ -767,33 +822,83 @@ export default function HomePage() {
               </div>
             )}
 
-            <form className="card" onSubmit={handleSubmit}>
-              <div className="card-header">
-                <h2>Формат: iiko (.xlsx)</h2>
+            <div className="formats-grid">
+              <form className="format-card format-active" onSubmit={handleSubmit}>
+                <div className="format-icon">📊</div>
+                <div className="format-card-body">
+                  <h3>Формат iiko</h3>
+                  <p className="muted">
+                    Загрузите XLSX-файл продаж из iiko. Система сверит штрихкоды
+                    с каталогами поставщиков и сформирует документы заказа.
+                  </p>
+
+                  <div className="upload-area">
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    />
+                    <div className="muted file-hint">
+                      {file ? `Выбран: ${file.name}` : 'Выберите .xlsx файл'}
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
+                  </button>
+
+                  {error && <div className="error-box">{error}</div>}
+                </div>
+              </form>
+
+              <div className="format-card format-soon">
+                <div className="badge-soon">Скоро</div>
+                <div className="format-icon">🏢</div>
+                <div className="format-card-body">
+                  <h3>Формат 1С</h3>
+                  <p className="muted">
+                    Поддержка выгрузки продаж из 1С:Предприятие. Формат будет
+                    доступен в ближайшем обновлении.
+                  </p>
+                </div>
               </div>
 
-              <input
-                type="file"
-                accept=".xlsx"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-
-              <div className="muted">
-                {file ? `Выбран файл: ${file.name}` : 'Файл пока не выбран'}
+              <div className="format-card format-soon">
+                <div className="badge-soon">Скоро</div>
+                <div className="format-icon">📦</div>
+                <div className="format-card-body">
+                  <h3>Формат МойСклад</h3>
+                  <p className="muted">
+                    Интеграция с сервисом МойСклад для автоматической загрузки
+                    данных о продажах. Формат будет доступен в ближайшем
+                    обновлении.
+                  </p>
+                </div>
               </div>
 
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={isLoading}
+              <div
+                className="format-card format-ai"
+                onClick={() =>
+                  setToastMessage(
+                    'Упс — блок ещё в разработке. Функционал скоро появится.',
+                  )
+                }
               >
-                {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
-              </button>
-
-              {error && <div className="error-box">{error}</div>}
-            </form>
-
-            {currentRun && <ResultView detail={currentRun} />}
+                <div className="format-icon">🤖</div>
+                <div className="format-card-body">
+                  <h3>Загрузите свои продажи</h3>
+                  <p className="muted">
+                    Загрузите данные в произвольном формате — система обработает
+                    их с помощью ИИ и сформирует автозаказ.
+                  </p>
+                  <div className="ai-hint">Обработка с помощью ИИ</div>
+                </div>
+              </div>
+            </div>
           </>
         )}
 
@@ -847,7 +952,9 @@ export default function HomePage() {
                         {formatDateTime(item.createdAt)}
                       </div>
                       <div className="history-item-meta">
-                        <span>Длительность: {formatDuration(item.durationMs)}</span>
+                        <span>
+                          Длительность: {formatDuration(item.durationMs)}
+                        </span>
                         <span>Не найдено: {item.unknownItemsCount}</span>
                       </div>
                     </button>
@@ -909,6 +1016,10 @@ export default function HomePage() {
           </>
         )}
       </main>
+
+      {toastMessage && (
+        <Toast message={toastMessage} onClose={() => setToastMessage('')} />
+      )}
 
       <style jsx>{`
         .app-shell {
@@ -975,6 +1086,7 @@ export default function HomePage() {
 
         .workspace {
           padding: 24px;
+          overflow-y: auto;
         }
 
         .workspace-header {
@@ -1010,6 +1122,7 @@ export default function HomePage() {
           height: 44px;
           background: #1f2937;
           color: #e5e7eb;
+          flex-shrink: 0;
         }
 
         .primary-button {
@@ -1017,6 +1130,7 @@ export default function HomePage() {
           color: #0b1220;
           padding: 12px 16px;
           font-weight: 700;
+          width: 100%;
         }
 
         .primary-button:disabled {
@@ -1041,6 +1155,10 @@ export default function HomePage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          border-radius: 12px;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
         }
 
         .danger-button:disabled {
@@ -1248,6 +1366,227 @@ export default function HomePage() {
           color: #cbd5e1;
         }
 
+        /* --- Format cards grid --- */
+
+        .formats-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+        }
+
+        .format-card {
+          position: relative;
+          background: #111827;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 20px;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .format-card h3 {
+          margin: 0;
+        }
+
+        .format-icon {
+          font-size: 36px;
+          margin-bottom: 8px;
+        }
+
+        .format-card-body {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          flex: 1;
+        }
+
+        .format-active {
+          border-color: rgba(34, 197, 94, 0.4);
+        }
+
+        .format-active:hover {
+          border-color: rgba(34, 197, 94, 0.6);
+          box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
+        }
+
+        .upload-area {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .upload-area input[type='file'] {
+          padding: 10px;
+          border: 1px dashed rgba(34, 197, 94, 0.4);
+          border-radius: 12px;
+          background: rgba(34, 197, 94, 0.04);
+          color: #e5e7eb;
+          cursor: pointer;
+        }
+
+        .file-hint {
+          font-size: 13px;
+        }
+
+        .format-soon {
+          opacity: 0.55;
+          cursor: default;
+        }
+
+        .badge-soon {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          background: rgba(250, 204, 21, 0.2);
+          color: #fde68a;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 999px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .format-ai {
+          cursor: pointer;
+          border-color: rgba(139, 92, 246, 0.3);
+        }
+
+        .format-ai:hover {
+          border-color: rgba(139, 92, 246, 0.55);
+          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
+        }
+
+        .ai-hint {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #c4b5fd;
+          background: rgba(139, 92, 246, 0.12);
+          padding: 5px 12px;
+          border-radius: 999px;
+          width: fit-content;
+        }
+
+        /* --- Supplier toggle & excel button --- */
+
+        .supplier-toggle {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: none;
+          border: none;
+          color: #e5e7eb;
+          cursor: pointer;
+          padding: 0;
+          text-align: left;
+        }
+
+        .supplier-toggle h4 {
+          margin: 0;
+        }
+
+        .section-toggle {
+          margin-bottom: 8px;
+        }
+
+        .section-toggle h3 {
+          margin: 0;
+        }
+
+        .toggle-icon {
+          font-size: 12px;
+          color: #94a3b8;
+          width: 16px;
+          flex-shrink: 0;
+        }
+
+        .excel-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: #22c55e;
+          color: #052e16;
+          font-weight: 700;
+          font-size: 13px;
+          padding: 10px 16px;
+          border-radius: 12px;
+          text-decoration: none;
+          white-space: nowrap;
+          flex-shrink: 0;
+          transition: background 0.15s;
+        }
+
+        .excel-button:hover {
+          background: #16a34a;
+        }
+
+        /* --- Toast --- */
+
+        .toast-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          animation: fadeIn 0.2s ease;
+        }
+
+        .toast-box {
+          background: #1e293b;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 20px;
+          padding: 32px;
+          max-width: 400px;
+          width: 90%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 16px;
+          text-align: center;
+        }
+
+        .toast-emoji {
+          font-size: 48px;
+        }
+
+        .toast-text {
+          font-size: 16px;
+          color: #e5e7eb;
+          line-height: 1.5;
+        }
+
+        .toast-close {
+          background: #334155;
+          color: #f8fafc;
+          border: none;
+          border-radius: 12px;
+          padding: 10px 24px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 600;
+          transition: background 0.15s;
+        }
+
+        .toast-close:hover {
+          background: #475569;
+        }
+
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
         @media (max-width: 1100px) {
           .app-shell {
             grid-template-columns: 1fr;
@@ -1259,6 +1598,10 @@ export default function HomePage() {
           }
 
           .history-layout {
+            grid-template-columns: 1fr;
+          }
+
+          .formats-grid {
             grid-template-columns: 1fr;
           }
         }
