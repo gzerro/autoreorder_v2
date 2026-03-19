@@ -105,7 +105,7 @@ type SupplierSeed = {
 
 /* ========== Constants & helpers ========== */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_URL}${path}`, { ...init, credentials: 'include' });
