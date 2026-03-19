@@ -2,6 +2,8 @@ node_modules
 .next
 dist
 storage
+shared-data/clients
+shared-data/users.json
 __pycache__
 *.pyc
 .env
