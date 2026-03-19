@@ -19,13 +19,9 @@ import type {
 @Injectable()
 export class AutozakazService {
   private readonly projectRoot = this.findProjectRoot(process.cwd());
-  private readonly storageDir = resolve(
+  private readonly baseStorageDir = resolve(
     this.projectRoot,
     process.env.STORAGE_DIR || 'storage',
-  );
-  private readonly suppliersFile = resolve(
-    this.projectRoot,
-    process.env.SUPPLIERS_FILE || 'shared-data/suppliers.json',
   );
   private readonly templateFile = resolve(
     this.projectRoot,
@@ -57,19 +53,43 @@ export class AutozakazService {
     }
   }
 
+  private getSuppliersFile(clientId: string): string {
+    return resolve(
+      this.projectRoot,
+      'shared-data',
+      'clients',
+      clientId,
+      'suppliers.json',
+    );
+  }
+
+  private getStorageDir(clientId: string): string {
+    return join(this.baseStorageDir, 'clients', clientId);
+  }
+
+  private getRunsDir(clientId: string): string {
+    return join(this.getStorageDir(clientId), 'runs');
+  }
+
+  private getRunDir(clientId: string, runId: string): string {
+    return join(this.getRunsDir(clientId), runId);
+  }
+
+  private getRunMetaPath(clientId: string, runId: string): string {
+    return join(this.getRunDir(clientId, runId), 'run-meta.json');
+  }
+
+  private getRunResultPath(clientId: string, runId: string): string {
+    return join(this.getRunDir(clientId, runId), 'result.json');
+  }
+
   private looksLikeMojibake(value: string): boolean {
     return /Ð|Ñ/.test(value);
   }
 
   private normalizeFileName(value: string): string {
-    if (!value) {
-      return value;
-    }
-
-    if (!this.looksLikeMojibake(value)) {
-      return value;
-    }
-
+    if (!value) return value;
+    if (!this.looksLikeMojibake(value)) return value;
     try {
       return Buffer.from(value, 'latin1').toString('utf8');
     } catch {
@@ -79,22 +99,6 @@ export class AutozakazService {
 
   private decodeUploadedFileName(fileName: string): string {
     return this.normalizeFileName(fileName);
-  }
-
-  private getRunsDir(): string {
-    return join(this.storageDir, 'runs');
-  }
-
-  private getRunDir(runId: string): string {
-    return join(this.getRunsDir(), runId);
-  }
-
-  private getRunMetaPath(runId: string): string {
-    return join(this.getRunDir(runId), 'run-meta.json');
-  }
-
-  private getRunResultPath(runId: string): string {
-    return join(this.getRunDir(runId), 'result.json');
   }
 
   private async pathExists(absolutePath: string): Promise<boolean> {
@@ -107,10 +111,7 @@ export class AutozakazService {
   }
 
   private normalizeErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-
+    if (error instanceof Error) return error.message;
     return 'Неизвестная ошибка расчёта';
   }
 
@@ -129,36 +130,35 @@ export class AutozakazService {
   }
 
   private async writeRunMeta(
+    clientId: string,
     runId: string,
     meta: AutozakazHistoryItem,
   ): Promise<void> {
-    const runDir = this.getRunDir(runId);
+    const runDir = this.getRunDir(clientId, runId);
     await fs.mkdir(runDir, { recursive: true });
     await fs.writeFile(
-      this.getRunMetaPath(runId),
+      this.getRunMetaPath(clientId, runId),
       JSON.stringify(meta, null, 2),
       'utf-8',
     );
   }
 
   private async readRunResult(
+    clientId: string,
     runId: string,
   ): Promise<AutozakazRunResultWithDownloads | null> {
-    const resultPath = this.getRunResultPath(runId);
-
-    if (!(await this.pathExists(resultPath))) {
-      return null;
-    }
-
+    const resultPath = this.getRunResultPath(clientId, runId);
+    if (!(await this.pathExists(resultPath))) return null;
     const rawResult = await fs.readFile(resultPath, 'utf-8');
     const result = JSON.parse(rawResult) as AutozakazRunResult;
     return this.decorateRunResult(result);
   }
 
   private async readRunMeta(
+    clientId: string,
     runId: string,
   ): Promise<AutozakazHistoryItem | null> {
-    const metaPath = this.getRunMetaPath(runId);
+    const metaPath = this.getRunMetaPath(clientId, runId);
 
     if (await this.pathExists(metaPath)) {
       const rawMeta = await fs.readFile(metaPath, 'utf-8');
@@ -181,10 +181,8 @@ export class AutozakazService {
       };
     }
 
-    const result = await this.readRunResult(runId);
-    if (!result) {
-      return null;
-    }
+    const result = await this.readRunResult(clientId, runId);
+    if (!result) return null;
 
     return {
       runId,
@@ -214,13 +212,10 @@ export class AutozakazService {
       deliveryDate: '',
     };
 
-    if (!settingsRaw) {
-      return defaults;
-    }
+    if (!settingsRaw) return defaults;
 
     try {
       const parsed = JSON.parse(settingsRaw) as Partial<AutozakazSettings>;
-
       return {
         coverageDays: Number(parsed.coverageDays ?? defaults.coverageDays),
         salesMultiplier: Number(
@@ -237,93 +232,85 @@ export class AutozakazService {
     }
   }
 
-  private async readSuppliersData(): Promise<any[]> {
-    const raw = await fs.readFile(this.suppliersFile, 'utf-8');
-    return JSON.parse(raw) as any[];
+  private async readSuppliersData(clientId: string): Promise<any[]> {
+    const filePath = this.getSuppliersFile(clientId);
+    try {
+      const raw = await fs.readFile(filePath, 'utf-8');
+      return JSON.parse(raw) as any[];
+    } catch {
+      return [];
+    }
   }
 
-  private async writeSuppliersData(data: any[]): Promise<void> {
-    await fs.writeFile(
-      this.suppliersFile,
-      JSON.stringify(data, null, 2),
-      'utf-8',
-    );
+  private async writeSuppliersData(
+    clientId: string,
+    data: any[],
+  ): Promise<void> {
+    const filePath = this.getSuppliersFile(clientId);
+    const dir = dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
-  async getSuppliers(): Promise<unknown> {
-    return this.readSuppliersData();
+  async getSuppliers(clientId: string): Promise<unknown> {
+    return this.readSuppliersData(clientId);
   }
 
-  async createSupplier(data: {
-    name: string;
-  }): Promise<{ code: string; name: string; items: any[] }> {
-    const suppliers = await this.readSuppliersData();
+  async createSupplier(
+    clientId: string,
+    data: { name: string },
+  ): Promise<{ code: string; name: string; items: any[] }> {
+    const suppliers = await this.readSuppliersData(clientId);
 
     let maxNum = 0;
     for (const s of suppliers) {
       const match = /^SUP-(\d+)$/.exec(s.code);
-      if (match) {
-        maxNum = Math.max(maxNum, Number(match[1]));
-      }
+      if (match) maxNum = Math.max(maxNum, Number(match[1]));
     }
 
     const code = `SUP-${String(maxNum + 1).padStart(3, '0')}`;
     const supplier = { code, name: data.name, items: [] as any[] };
 
     suppliers.push(supplier);
-    await this.writeSuppliersData(suppliers);
-
+    await this.writeSuppliersData(clientId, suppliers);
     return supplier;
   }
 
   async updateSupplier(
+    clientId: string,
     code: string,
     data: { name: string },
   ): Promise<{ code: string; name: string; items: any[] }> {
-    const suppliers = await this.readSuppliersData();
+    const suppliers = await this.readSuppliersData(clientId);
     const supplier = suppliers.find((s) => s.code === code);
-
-    if (!supplier) {
-      throw new NotFoundException('Поставщик не найден');
-    }
-
+    if (!supplier) throw new NotFoundException('Поставщик не найден');
     supplier.name = data.name;
-    await this.writeSuppliersData(suppliers);
-
+    await this.writeSuppliersData(clientId, suppliers);
     return supplier;
   }
 
-  async deleteSupplier(code: string): Promise<{ ok: true }> {
-    const suppliers = await this.readSuppliersData();
+  async deleteSupplier(clientId: string, code: string): Promise<{ ok: true }> {
+    const suppliers = await this.readSuppliersData(clientId);
     const idx = suppliers.findIndex((s) => s.code === code);
-
-    if (idx === -1) {
-      throw new NotFoundException('Поставщик не найден');
-    }
-
+    if (idx === -1) throw new NotFoundException('Поставщик не найден');
     suppliers.splice(idx, 1);
-    await this.writeSuppliersData(suppliers);
-
+    await this.writeSuppliersData(clientId, suppliers);
     return { ok: true };
   }
 
   async addSupplierItem(
+    clientId: string,
     supplierCode: string,
     item: { barcode: string; name: string; price: number },
   ): Promise<{ ok: true }> {
-    const suppliers = await this.readSuppliersData();
+    const suppliers = await this.readSuppliersData(clientId);
     const supplier = suppliers.find((s) => s.code === supplierCode);
-
-    if (!supplier) {
-      throw new NotFoundException('Поставщик не найден');
-    }
-
+    if (!supplier) throw new NotFoundException('Поставщик не найден');
     if (supplier.items.some((i: any) => i.barcode === item.barcode)) {
       throw new BadRequestException(
         'Товар с таким штрихкодом уже есть у этого поставщика',
       );
     }
-
     supplier.items.push({
       barcode: item.barcode,
       name: item.name,
@@ -331,28 +318,21 @@ export class AutozakazService {
       isActive: true,
       source: 'manual',
     });
-
-    await this.writeSuppliersData(suppliers);
+    await this.writeSuppliersData(clientId, suppliers);
     return { ok: true };
   }
 
   async updateSupplierItem(
+    clientId: string,
     supplierCode: string,
     oldBarcode: string,
     data: { barcode?: string; name?: string; price?: number },
   ): Promise<{ ok: true }> {
-    const suppliers = await this.readSuppliersData();
+    const suppliers = await this.readSuppliersData(clientId);
     const supplier = suppliers.find((s) => s.code === supplierCode);
-
-    if (!supplier) {
-      throw new NotFoundException('Поставщик не найден');
-    }
-
+    if (!supplier) throw new NotFoundException('Поставщик не найден');
     const item = supplier.items.find((i: any) => i.barcode === oldBarcode);
-
-    if (!item) {
-      throw new NotFoundException('Товар не найден');
-    }
+    if (!item) throw new NotFoundException('Товар не найден');
 
     if (
       data.barcode !== undefined &&
@@ -368,46 +348,34 @@ export class AutozakazService {
     if (data.name !== undefined) item.name = data.name;
     if (data.price !== undefined) item.price = data.price;
 
-    await this.writeSuppliersData(suppliers);
+    await this.writeSuppliersData(clientId, suppliers);
     return { ok: true };
   }
 
   async deleteSupplierItem(
+    clientId: string,
     supplierCode: string,
     barcode: string,
   ): Promise<{ ok: true }> {
-    const suppliers = await this.readSuppliersData();
+    const suppliers = await this.readSuppliersData(clientId);
     const supplier = suppliers.find((s) => s.code === supplierCode);
-
-    if (!supplier) {
-      throw new NotFoundException('Поставщик не найден');
-    }
-
+    if (!supplier) throw new NotFoundException('Поставщик не найден');
     const idx = supplier.items.findIndex((i: any) => i.barcode === barcode);
-
-    if (idx === -1) {
-      throw new NotFoundException('Товар не найден');
-    }
-
+    if (idx === -1) throw new NotFoundException('Товар не найден');
     supplier.items.splice(idx, 1);
-    await this.writeSuppliersData(suppliers);
-
+    await this.writeSuppliersData(clientId, suppliers);
     return { ok: true };
   }
 
-  async listHistory(): Promise<AutozakazHistoryItem[]> {
-    const runsDir = this.getRunsDir();
-
-    if (!(await this.pathExists(runsDir))) {
-      return [];
-    }
+  async listHistory(clientId: string): Promise<AutozakazHistoryItem[]> {
+    const runsDir = this.getRunsDir(clientId);
+    if (!(await this.pathExists(runsDir))) return [];
 
     const entries = await fs.readdir(runsDir, { withFileTypes: true });
-
     const items = await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
-        .map((entry) => this.readRunMeta(entry.name)),
+        .map((entry) => this.readRunMeta(clientId, entry.name)),
     );
 
     return items
@@ -415,43 +383,34 @@ export class AutozakazService {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async getHistoryRun(runId: string): Promise<AutozakazHistoryRunDetail> {
-    const historyMeta = await this.readRunMeta(runId);
-
-    if (!historyMeta) {
-      throw new NotFoundException('Прогон истории не найден');
-    }
-
-    const result = await this.readRunResult(runId);
-
-    return {
-      historyMeta,
-      result,
-    };
+  async getHistoryRun(
+    clientId: string,
+    runId: string,
+  ): Promise<AutozakazHistoryRunDetail> {
+    const historyMeta = await this.readRunMeta(clientId, runId);
+    if (!historyMeta) throw new NotFoundException('Прогон истории не найден');
+    const result = await this.readRunResult(clientId, runId);
+    return { historyMeta, result };
   }
 
-  async clearHistory(): Promise<{ ok: true; cleared: boolean }> {
-    const runsDir = this.getRunsDir();
-
+  async clearHistory(
+    clientId: string,
+  ): Promise<{ ok: true; cleared: boolean }> {
+    const runsDir = this.getRunsDir(clientId);
     if (await this.pathExists(runsDir)) {
       await fs.rm(runsDir, { recursive: true, force: true });
     }
-
     await fs.mkdir(runsDir, { recursive: true });
-
-    return {
-      ok: true,
-      cleared: true,
-    };
+    return { ok: true, cleared: true };
   }
 
   async processIikoUpload(
+    clientId: string,
     file: Express.Multer.File,
     settings: AutozakazSettings,
   ): Promise<AutozakazHistoryRunDetail> {
     const runId = randomUUID();
-    const runDir = this.getRunDir(runId);
-
+    const runDir = this.getRunDir(clientId, runId);
     await fs.mkdir(runDir, { recursive: true });
 
     const decodedFileName = this.decodeUploadedFileName(file.originalname);
@@ -459,7 +418,6 @@ export class AutozakazService {
     await fs.writeFile(sourceFilePath, file.buffer);
 
     const startedAt = new Date().toISOString();
-
     const initialMeta: AutozakazHistoryItem = {
       runId,
       sourceFileName: decodedFileName,
@@ -476,9 +434,9 @@ export class AutozakazService {
       errorMessage: null,
     };
 
-    await this.writeRunMeta(runId, initialMeta);
+    await this.writeRunMeta(clientId, runId, initialMeta);
 
-    const resultPath = this.getRunResultPath(runId);
+    const resultPath = this.getRunResultPath(clientId, runId);
     const startedMs = Date.now();
 
     try {
@@ -486,7 +444,7 @@ export class AutozakazService {
         input: sourceFilePath,
         runDir,
         resultPath,
-        suppliersFile: this.suppliersFile,
+        suppliersFile: this.getSuppliersFile(clientId),
         orderTemplate: this.templateFile,
         settings,
         runId,
@@ -509,12 +467,8 @@ export class AutozakazService {
         errorMessage: null,
       };
 
-      await this.writeRunMeta(runId, historyMeta);
-
-      return {
-        historyMeta,
-        result,
-      };
+      await this.writeRunMeta(clientId, runId, historyMeta);
+      return { historyMeta, result };
     } catch (error) {
       const finishedAt = new Date().toISOString();
       const historyMeta: AutozakazHistoryItem = {
@@ -524,14 +478,17 @@ export class AutozakazService {
         durationMs: Date.now() - startedMs,
         errorMessage: this.normalizeErrorMessage(error),
       };
-
-      await this.writeRunMeta(runId, historyMeta);
+      await this.writeRunMeta(clientId, runId, historyMeta);
       throw error;
     }
   }
 
-  async resolveOrderFile(runId: string, supplierCode: string) {
-    const runDir = this.getRunDir(runId);
+  async resolveOrderFile(
+    clientId: string,
+    runId: string,
+    supplierCode: string,
+  ) {
+    const runDir = this.getRunDir(clientId, runId);
     const orderFile = join(runDir, `order_${supplierCode}.xlsx`);
 
     try {
@@ -546,18 +503,14 @@ export class AutozakazService {
     };
   }
 
-  async resolveSourceFile(runId: string) {
-    const runDir = this.getRunDir(runId);
+  async resolveSourceFile(clientId: string, runId: string) {
+    const runDir = this.getRunDir(clientId, runId);
     const files = await fs.readdir(runDir);
-
     const source = files.find(
-      (file) => file.toLowerCase().endsWith('.xlsx') && !file.startsWith('order_'),
+      (file) =>
+        file.toLowerCase().endsWith('.xlsx') && !file.startsWith('order_'),
     );
-
-    if (!source) {
-      throw new NotFoundException('Исходный файл не найден');
-    }
-
+    if (!source) throw new NotFoundException('Исходный файл не найден');
     return {
       absolutePath: join(runDir, source),
       downloadName: this.normalizeFileName(source),
@@ -565,7 +518,8 @@ export class AutozakazService {
   }
 
   private async executePython(payload: Record<string, unknown>): Promise<void> {
-    await fs.mkdir(this.storageDir, { recursive: true });
+    const runDir = payload.runDir as string;
+    await fs.mkdir(dirname(runDir), { recursive: true });
 
     return new Promise((resolvePromise, rejectPromise) => {
       const child = spawn(this.pythonBin, [this.pythonScript], {

@@ -2,7 +2,24 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 
-type PageKey = 'main' | 'history' | 'suppliers';
+/* ========== Types ========== */
+
+type PageKey = 'main' | 'history' | 'suppliers' | 'profile';
+type AdminPageKey = 'clients' | 'client-detail' | 'profile';
+
+type AuthUser = {
+  id: string;
+  login: string;
+  role: 'admin' | 'client';
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+type AdminClient = AuthUser & {
+  suppliersCount: number;
+  runsCount: number;
+};
 
 type Settings = {
   coverageDays: number;
@@ -46,19 +63,11 @@ type RunResult = {
   sourceFileName: string;
   generatedAt: string;
   sourceDownloadUrl: string;
-  period: {
-    start: string | null;
-    end: string | null;
-    days: number;
-  };
+  period: { start: string | null; end: string | null; days: number };
   settings: Settings;
   summary: RunSummary;
   suppliers: SupplierResult[];
-  unknownItems: Array<{
-    barcode: string;
-    name: string;
-    soldQty: number;
-  }>;
+  unknownItems: Array<{ barcode: string; name: string; soldQty: number }>;
 };
 
 type HistoryItem = {
@@ -94,7 +103,13 @@ type SupplierSeed = {
   }>;
 };
 
+/* ========== Constants & helpers ========== */
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_URL}${path}`, { ...init, credentials: 'include' });
+}
 
 const INITIAL_SETTINGS: Settings = {
   coverageDays: 7,
@@ -107,59 +122,35 @@ const INITIAL_SETTINGS: Settings = {
 };
 
 function formatDateTime(value: string | null): string {
-  if (!value) {
-    return '—';
-  }
-
+  if (!value) return '—';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('ru-RU');
 }
 
 function formatDuration(value: number | null): string {
-  if (value === null || Number.isNaN(value)) {
-    return '—';
-  }
-
-  if (value < 1000) {
-    return `${value} мс`;
-  }
-
+  if (value === null || Number.isNaN(value)) return '—';
+  if (value < 1000) return `${value} мс`;
   return `${(value / 1000).toFixed(2)} сек`;
 }
 
 async function readApiError(response: Response): Promise<string> {
-  const contentType = response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/json')) {
-    const payload = (await response.json()) as {
+  const ct = response.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    const p = (await response.json()) as {
       message?: string | string[];
       error?: string;
     };
-
-    if (Array.isArray(payload.message)) {
-      return payload.message.join(', ');
-    }
-
-    return payload.message || payload.error || 'Ошибка запроса';
+    if (Array.isArray(p.message)) return p.message.join(', ');
+    return p.message || p.error || 'Ошибка запроса';
   }
-
-  const text = await response.text();
-  return text || 'Ошибка запроса';
+  return (await response.text()) || 'Ошибка запроса';
 }
 
 function normalizeRunDetail(payload: unknown): HistoryRunDetail {
   const data = payload as Partial<HistoryRunDetail> & Partial<RunResult>;
-
-  if (data.historyMeta) {
-    return data as HistoryRunDetail;
-  }
-
+  if (data.historyMeta) return data as HistoryRunDetail;
   const legacy = data as RunResult;
-
   return {
     historyMeta: {
       runId: legacy.runId,
@@ -180,26 +171,19 @@ function normalizeRunDetail(payload: unknown): HistoryRunDetail {
   };
 }
 
-function StatusBadge({
-  status,
-}: {
-  status: HistoryItem['status'];
-}) {
+/* ========== Small components ========== */
+
+function StatusBadge({ status }: { status: HistoryItem['status'] }) {
   const label =
     status === 'completed'
       ? 'Готово'
       : status === 'failed'
-      ? 'Ошибка'
-      : 'В обработке';
-
+        ? 'Ошибка'
+        : 'В обработке';
   return <span className={`status-badge status-${status}`}>{label}</span>;
 }
 
-function ResultView({
-  detail,
-}: {
-  detail: HistoryRunDetail;
-}) {
+function ResultView({ detail }: { detail: HistoryRunDetail }) {
   const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(
     new Set(),
   );
@@ -208,11 +192,8 @@ function ResultView({
   const toggleSupplier = (code: string) => {
     setExpandedSuppliers((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) {
-        next.delete(code);
-      } else {
-        next.add(code);
-      }
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
       return next;
     });
   };
@@ -224,8 +205,7 @@ function ResultView({
     return (
       <div className="result-card">
         <div className="error-box">
-          Результат расчёта пришёл в неожиданном формате. Проверьте перезапуск
-          API.
+          Результат расчёта пришёл в неожиданном формате.
         </div>
       </div>
     );
@@ -277,8 +257,7 @@ function ResultView({
 
       {!result && (
         <div className="empty-box">
-          Для этого прогона нет готового результата. Обычно так выглядит
-          неуспешный или ещё не завершённый расчёт.
+          Для этого прогона нет готового результата.
         </div>
       )}
 
@@ -310,10 +289,9 @@ function ResultView({
 
           <section className="section-block">
             <h3>Документы заказа по поставщикам</h3>
-
             {result.suppliers.length === 0 ? (
               <div className="empty-box">
-                Ни один поставщик не получил заказ. Тут табличная пустыня.
+                Ни один поставщик не получил заказ.
               </div>
             ) : (
               result.suppliers.map((supplier) => (
@@ -335,7 +313,6 @@ function ResultView({
                         </p>
                       </div>
                     </button>
-
                     <a
                       className="excel-button"
                       href={`${API_URL}${supplier.downloadUrl}`}
@@ -345,7 +322,6 @@ function ResultView({
                       ⬇ Скачать Excel
                     </a>
                   </div>
-
                   {expandedSuppliers.has(supplier.code) && (
                     <div className="table-wrap">
                       <table>
@@ -390,12 +366,11 @@ function ResultView({
                 Товары без найденного поставщика ({result.unknownItems.length})
               </h3>
             </button>
-
             {unknownExpanded && (
               <>
                 {result.unknownItems.length === 0 ? (
                   <div className="empty-box">
-                    Все штрихкоды нашлись у известных поставщиков. Красота.
+                    Все штрихкоды нашлись у известных поставщиков.
                   </div>
                 ) : (
                   <div className="table-wrap">
@@ -439,9 +414,7 @@ function Toast({
     const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
-
   if (!message) return null;
-
   return (
     <div className="toast-overlay" onClick={onClose}>
       <div className="toast-box" onClick={(e) => e.stopPropagation()}>
@@ -455,7 +428,42 @@ function Toast({
   );
 }
 
+/* ========== Main component ========== */
+
 export default function HomePage() {
+  /* --- Auth state --- */
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [loginInput, setLoginInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+
+  /* --- Admin state --- */
+  const [adminPage, setAdminPage] = useState<AdminPageKey>('clients');
+  const [adminClients, setAdminClients] = useState<AdminClient[]>([]);
+  const [adminClientsLoading, setAdminClientsLoading] = useState(false);
+  const [adminError, setAdminError] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedClientDetail, setSelectedClientDetail] = useState<any>(null);
+  const [clientSuppliers, setClientSuppliers] = useState<SupplierSeed[]>([]);
+  const [clientHistory, setClientHistory] = useState<HistoryItem[]>([]);
+  const [createClientOpen, setCreateClientOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientCreds, setNewClientCreds] = useState<{
+    login: string;
+    password: string;
+  } | null>(null);
+  const [editClientOpen, setEditClientOpen] = useState(false);
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientLogin, setEditClientLogin] = useState('');
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+
+  /* --- Client app state --- */
   const [activePage, setActivePage] = useState<PageKey>('main');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -477,7 +485,6 @@ export default function HomePage() {
   const [suppliers, setSuppliers] = useState<SupplierSeed[]>([]);
   const [suppliersLoading, setSuppliersLoading] = useState(false);
   const [suppliersError, setSuppliersError] = useState('');
-
   const [selectedSupplierCode, setSelectedSupplierCode] = useState<
     string | null
   >(null);
@@ -487,7 +494,6 @@ export default function HomePage() {
   >('create');
   const [supplierFormName, setSupplierFormName] = useState('');
   const [supplierFormCode, setSupplierFormCode] = useState('');
-
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [itemModalMode, setItemModalMode] = useState<'create' | 'edit'>(
     'create',
@@ -496,38 +502,220 @@ export default function HomePage() {
   const [itemFormName, setItemFormName] = useState('');
   const [itemFormPrice, setItemFormPrice] = useState('');
   const [itemEditOriginalBarcode, setItemEditOriginalBarcode] = useState('');
-
   const [deleteConfirmType, setDeleteConfirmType] = useState<
     'supplier' | 'item' | null
   >(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState('');
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
+  const selectedSupplier =
+    suppliers.find((s) => s.code === selectedSupplierCode) || null;
+
+  /* --- Auth handlers --- */
+
+  useEffect(() => {
+    apiFetch('/auth/me')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((u) => setAuthUser(u))
+      .catch(() => setAuthUser(null))
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const resp = await apiFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login: loginInput, password: passwordInput }),
+      });
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      const user = await resp.json();
+      setAuthUser(user);
+    } catch (err) {
+      setLoginError(
+        err instanceof Error ? err.message : 'Ошибка входа',
+      );
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await apiFetch('/auth/logout', { method: 'POST' });
+    setAuthUser(null);
+    setLoginInput('');
+    setPasswordInput('');
+    setAdminPage('clients');
+    setActivePage('main');
+  }
+
+  async function handleUpdateProfile() {
+    if (!profileName.trim()) return;
+    try {
+      const resp = await apiFetch('/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: profileName.trim() }),
+      });
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      const updated = await resp.json();
+      setAuthUser((prev) => (prev ? { ...prev, name: updated.name } : prev));
+      setProfileEditOpen(false);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /* --- Admin handlers --- */
+
+  const loadAdminClients = useCallback(async () => {
+    setAdminClientsLoading(true);
+    setAdminError('');
+    try {
+      const resp = await apiFetch('/auth/admin/clients');
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      setAdminClients(await resp.json());
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Ошибка загрузки');
+    } finally {
+      setAdminClientsLoading(false);
+    }
+  }, []);
+
+  async function handleCreateClient() {
+    if (!newClientName.trim()) return;
+    setAdminError('');
+    try {
+      const resp = await apiFetch('/auth/admin/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newClientName.trim() }),
+      });
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      const data = await resp.json();
+      setNewClientCreds({ login: data.login, password: data.password });
+      await loadAdminClients();
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : 'Ошибка создания клиента',
+      );
+    }
+  }
+
+  async function openClientDetail(clientId: string) {
+    setSelectedClientId(clientId);
+    setAdminPage('client-detail');
+    setAdminError('');
+    try {
+      const [detailResp, suppResp, histResp] = await Promise.all([
+        apiFetch(`/auth/admin/clients/${clientId}`),
+        apiFetch(`/auth/admin/clients/${clientId}/suppliers`),
+        apiFetch(`/auth/admin/clients/${clientId}/history`),
+      ]);
+      if (detailResp.ok) setSelectedClientDetail(await detailResp.json());
+      if (suppResp.ok) setClientSuppliers(await suppResp.json());
+      if (histResp.ok) setClientHistory(await histResp.json());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleEditClient() {
+    if (!selectedClientId) return;
+    try {
+      const resp = await apiFetch(
+        `/auth/admin/clients/${selectedClientId}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: editClientName.trim() || undefined,
+            login: editClientLogin.trim() || undefined,
+          }),
+        },
+      );
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      setEditClientOpen(false);
+      await openClientDetail(selectedClientId);
+      await loadAdminClients();
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : 'Ошибка сохранения',
+      );
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!selectedClientId || !newPassword) return;
+    try {
+      const resp = await apiFetch(
+        `/auth/admin/clients/${selectedClientId}/password`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: newPassword }),
+        },
+      );
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      setShowNewPassword(true);
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : 'Ошибка смены пароля',
+      );
+    }
+  }
+
+  async function handleToggleClient(clientId: string) {
+    const client = adminClients.find((c) => c.id === clientId);
+    const action = client?.isActive ? 'деактивировать' : 'активировать';
+    if (!confirm(`${action} клиента «${client?.name}»?`)) return;
+    try {
+      const resp = await apiFetch(`/auth/admin/clients/${clientId}`, {
+        method: 'DELETE',
+      });
+      if (!resp.ok) throw new Error(await readApiError(resp));
+      await loadAdminClients();
+      if (selectedClientId === clientId) {
+        await openClientDetail(clientId);
+      }
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : 'Ошибка операции',
+      );
+    }
+  }
+
+  function generateRandomPassword() {
+    const chars =
+      'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let result = '';
+    for (let i = 0; i < 10; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewPassword(result);
+  }
+
+  /* --- Client app handlers --- */
+
   const change = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const loadHistoryRun = useCallback(async (runId: string) => {
     setSelectedHistoryRunId(runId);
     setHistoryError('');
-
     try {
-      const response = await fetch(`${API_URL}/autozakaz/history/${runId}`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
-      const raw = await response.json();
-      const data = normalizeRunDetail(raw);
-      setSelectedHistoryRun(data);
+      const response = await apiFetch(`/autozakaz/history/${runId}`);
+      if (!response.ok) throw new Error(await readApiError(response));
+      setSelectedHistoryRun(normalizeRunDetail(await response.json()));
     } catch (loadError) {
       setHistoryError(
         loadError instanceof Error
           ? loadError.message
-          : 'Не удалось загрузить детали истории',
+          : 'Не удалось загрузить детали',
       );
     }
   }, []);
@@ -535,13 +723,9 @@ export default function HomePage() {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError('');
-
     try {
-      const response = await fetch(`${API_URL}/autozakaz/history`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
+      const response = await apiFetch('/autozakaz/history');
+      if (!response.ok) throw new Error(await readApiError(response));
       const data = (await response.json()) as HistoryItem[];
       setHistoryItems(data);
 
@@ -571,15 +755,10 @@ export default function HomePage() {
   const loadSuppliers = useCallback(async () => {
     setSuppliersLoading(true);
     setSuppliersError('');
-
     try {
-      const response = await fetch(`${API_URL}/autozakaz/suppliers`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
-      const data = (await response.json()) as SupplierSeed[];
-      setSuppliers(data);
+      const response = await apiFetch('/autozakaz/suppliers');
+      if (!response.ok) throw new Error(await readApiError(response));
+      setSuppliers((await response.json()) as SupplierSeed[]);
     } catch (loadError) {
       setSuppliersError(
         loadError instanceof Error
@@ -591,98 +770,80 @@ export default function HomePage() {
     }
   }, []);
 
-  const selectedSupplier =
-    suppliers.find((s) => s.code === selectedSupplierCode) || null;
-
+  /* supplier CRUD helpers */
   function openCreateSupplier() {
     setSupplierFormName('');
     setSupplierModalMode('create');
     setSupplierModalOpen(true);
   }
-
   function openEditSupplier(supplier: SupplierSeed) {
     setSupplierFormName(supplier.name);
     setSupplierFormCode(supplier.code);
     setSupplierModalMode('edit');
     setSupplierModalOpen(true);
   }
-
   async function handleSaveSupplier() {
     const name = supplierFormName.trim();
     if (!name) return;
     setSuppliersError('');
-
     try {
       if (supplierModalMode === 'create') {
-        const resp = await fetch(`${API_URL}/autozakaz/suppliers`, {
+        const r = await apiFetch('/autozakaz/suppliers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name }),
         });
-        if (!resp.ok) throw new Error(await readApiError(resp));
+        if (!r.ok) throw new Error(await readApiError(r));
       } else {
-        const resp = await fetch(
-          `${API_URL}/autozakaz/suppliers/${supplierFormCode}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
-          },
-        );
-        if (!resp.ok) throw new Error(await readApiError(resp));
+        const r = await apiFetch(`/autozakaz/suppliers/${supplierFormCode}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) throw new Error(await readApiError(r));
       }
       setSupplierModalOpen(false);
       await loadSuppliers();
     } catch (e) {
-      setSuppliersError(
-        e instanceof Error ? e.message : 'Ошибка сохранения поставщика',
-      );
+      setSuppliersError(e instanceof Error ? e.message : 'Ошибка');
     }
   }
-
   function requestDeleteSupplier(supplier: SupplierSeed) {
     setDeleteConfirmType('supplier');
     setDeleteConfirmTarget(supplier.code);
     setDeleteConfirmName(supplier.name);
   }
-
   async function confirmDelete() {
     if (deleteConfirmType === 'supplier') {
       try {
-        const resp = await fetch(
-          `${API_URL}/autozakaz/suppliers/${deleteConfirmTarget}`,
+        const r = await apiFetch(
+          `/autozakaz/suppliers/${deleteConfirmTarget}`,
           { method: 'DELETE' },
         );
-        if (!resp.ok) throw new Error(await readApiError(resp));
-        if (selectedSupplierCode === deleteConfirmTarget) {
+        if (!r.ok) throw new Error(await readApiError(r));
+        if (selectedSupplierCode === deleteConfirmTarget)
           setSelectedSupplierCode(null);
-        }
         setDeleteConfirmType(null);
         await loadSuppliers();
       } catch (e) {
-        setSuppliersError(
-          e instanceof Error ? e.message : 'Ошибка удаления поставщика',
-        );
+        setSuppliersError(e instanceof Error ? e.message : 'Ошибка');
         setDeleteConfirmType(null);
       }
     } else if (deleteConfirmType === 'item' && selectedSupplierCode) {
       try {
-        const resp = await fetch(
-          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(deleteConfirmTarget)}`,
+        const r = await apiFetch(
+          `/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(deleteConfirmTarget)}`,
           { method: 'DELETE' },
         );
-        if (!resp.ok) throw new Error(await readApiError(resp));
+        if (!r.ok) throw new Error(await readApiError(r));
         setDeleteConfirmType(null);
         await loadSuppliers();
       } catch (e) {
-        setSuppliersError(
-          e instanceof Error ? e.message : 'Ошибка удаления товара',
-        );
+        setSuppliersError(e instanceof Error ? e.message : 'Ошибка');
         setDeleteConfirmType(null);
       }
     }
   }
-
   function openCreateItem() {
     setItemFormBarcode('');
     setItemFormName('');
@@ -690,7 +851,6 @@ export default function HomePage() {
     setItemModalMode('create');
     setItemModalOpen(true);
   }
-
   function openEditItem(item: {
     barcode: string;
     name: string;
@@ -703,7 +863,6 @@ export default function HomePage() {
     setItemModalMode('edit');
     setItemModalOpen(true);
   }
-
   async function handleSaveItem() {
     if (!selectedSupplierCode) return;
     const barcode = itemFormBarcode.trim();
@@ -711,38 +870,34 @@ export default function HomePage() {
     const price = parseFloat(itemFormPrice) || 0;
     if (!barcode || !name) return;
     setSuppliersError('');
-
     try {
       if (itemModalMode === 'create') {
-        const resp = await fetch(
-          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items`,
+        const r = await apiFetch(
+          `/autozakaz/suppliers/${selectedSupplierCode}/items`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ barcode, name, price }),
           },
         );
-        if (!resp.ok) throw new Error(await readApiError(resp));
+        if (!r.ok) throw new Error(await readApiError(r));
       } else {
-        const resp = await fetch(
-          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(itemEditOriginalBarcode)}`,
+        const r = await apiFetch(
+          `/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(itemEditOriginalBarcode)}`,
           {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ barcode, name, price }),
           },
         );
-        if (!resp.ok) throw new Error(await readApiError(resp));
+        if (!r.ok) throw new Error(await readApiError(r));
       }
       setItemModalOpen(false);
       await loadSuppliers();
     } catch (e) {
-      setSuppliersError(
-        e instanceof Error ? e.message : 'Ошибка сохранения товара',
-      );
+      setSuppliersError(e instanceof Error ? e.message : 'Ошибка');
     }
   }
-
   function requestDeleteItem(item: { barcode: string; name: string }) {
     setDeleteConfirmType('item');
     setDeleteConfirmTarget(item.barcode);
@@ -750,52 +905,37 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (activePage === 'history') {
-      void loadHistory();
-    }
+    if (!authUser || authUser.role !== 'client') return;
+    if (activePage === 'history') void loadHistory();
+    if (activePage === 'suppliers') void loadSuppliers();
+  }, [activePage, loadHistory, loadSuppliers, authUser]);
 
-    if (activePage === 'suppliers') {
-      void loadSuppliers();
+  useEffect(() => {
+    if (authUser?.role === 'admin' && adminPage === 'clients') {
+      void loadAdminClients();
     }
-  }, [activePage, loadHistory, loadSuppliers]);
+  }, [authUser, adminPage, loadAdminClients]);
 
   async function handleClearHistory() {
-    const confirmed = window.confirm(
-      'Очистить всю историю автозаказа? Будут удалены все прогоны и все связанные файлы.',
-    );
-
-    if (!confirmed) {
+    if (
+      !confirm(
+        'Очистить всю историю автозаказа? Все прогоны и файлы будут удалены.',
+      )
+    )
       return;
-    }
-
     setIsClearingHistory(true);
     setError('');
-    setHistoryError('');
-
     try {
-      const response = await fetch(`${API_URL}/autozakaz/history`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
+      const r = await apiFetch('/autozakaz/history', { method: 'DELETE' });
+      if (!r.ok) throw new Error(await readApiError(r));
       setHistoryItems([]);
       setSelectedHistoryRun(null);
       setSelectedHistoryRunId(null);
-
-      if (activePage === 'history') {
-        await loadHistory();
-      }
-    } catch (clearError) {
-      const message =
-        clearError instanceof Error
-          ? clearError.message
-          : 'Не удалось очистить историю';
-
-      setError(message);
-      setHistoryError(message);
+      if (activePage === 'history') await loadHistory();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка';
+      setError(msg);
+      setHistoryError(msg);
     } finally {
       setIsClearingHistory(false);
     }
@@ -803,32 +943,23 @@ export default function HomePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     if (!file) {
       setError('Сначала выберите iiko-файл.');
       return;
     }
-
     setError('');
     setIsLoading(true);
-
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('settings', JSON.stringify(settings));
-
-      const response = await fetch(`${API_URL}/autozakaz/iiko/upload`, {
+      const response = await apiFetch('/autozakaz/iiko/upload', {
         method: 'POST',
         body: formData,
       });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
+      if (!response.ok) throw new Error(await readApiError(response));
       const raw = await response.json();
       const data = normalizeRunDetail(raw);
-
       setSelectedHistoryRunId(data.historyMeta.runId);
       setSelectedHistoryRun(data);
       setFile(null);
@@ -844,61 +975,546 @@ export default function HomePage() {
     }
   }
 
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  /* ========== RENDER ========== */
+
+  if (!authChecked) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-content">Загрузка…</div>
+        <style jsx>{`
+          .loading-screen {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+            color: #94a3b8;
+            font-size: 18px;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-logo">Автозаказ Про</div>
+          <p className="login-subtitle">Вход в систему</p>
+          <form onSubmit={handleLogin} className="login-form">
+            <label>
+              Логин
+              <input
+                type="text"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                placeholder="Введите логин"
+                autoFocus
+              />
+            </label>
+            <label>
+              Пароль
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Введите пароль"
+              />
+            </label>
+            {loginError && <div className="login-error">{loginError}</div>}
+            <button
+              type="submit"
+              className="login-btn"
+              disabled={loginLoading || !loginInput || !passwordInput}
+            >
+              {loginLoading ? 'Вход…' : 'Войти'}
+            </button>
+          </form>
+          <div className="login-beta">
+            Это beta-версия. Регистрация пока не осуществляется.
+            <br />
+            Получите логин и пароль у администратора.
+          </div>
+        </div>
+        <style jsx>{`
+          .login-screen {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+          }
+          .login-card {
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+          }
+          .login-logo {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 4px;
+          }
+          .login-subtitle {
+            color: #94a3b8;
+            margin: 0 0 28px;
+          }
+          .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .login-form label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: #cbd5e1;
+            font-size: 14px;
+          }
+          .login-form input {
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: #0f172a;
+            color: #e5e7eb;
+            padding: 12px 14px;
+            font-size: 15px;
+          }
+          .login-error {
+            background: rgba(239, 68, 68, 0.14);
+            color: #fca5a5;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+          }
+          .login-btn {
+            background: #22c55e;
+            color: #052e16;
+            border: none;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 4px;
+          }
+          .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+          }
+          .login-beta {
+            margin-top: 24px;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(250, 204, 21, 0.08);
+            color: #fde68a;
+            font-size: 13px;
+            line-height: 1.6;
+            text-align: center;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  /* ========== Authenticated: admin or client ========== */
+
+  const isAdmin = authUser.role === 'admin';
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div>
           <div className="logo">Автозаказ Про</div>
-
+          {isAdmin && (
+            <div className="role-tag">Администратор</div>
+          )}
           <nav className="nav">
-            <button
-              type="button"
-              className={activePage === 'main' ? 'nav-item active' : 'nav-item'}
-              onClick={() => setActivePage('main')}
-            >
-              Главная
-            </button>
-            <button
-              type="button"
-              className={
-                activePage === 'history' ? 'nav-item active' : 'nav-item'
-              }
-              onClick={() => setActivePage('history')}
-            >
-              История
-            </button>
-            <button
-              type="button"
-              className={
-                activePage === 'suppliers' ? 'nav-item active' : 'nav-item'
-              }
-              onClick={() => setActivePage('suppliers')}
-            >
-              Поставщики
-            </button>
+            {isAdmin ? (
+              <>
+                <button
+                  type="button"
+                  className={
+                    adminPage === 'clients' && !selectedClientId
+                      ? 'nav-item active'
+                      : 'nav-item'
+                  }
+                  onClick={() => {
+                    setAdminPage('clients');
+                    setSelectedClientId(null);
+                  }}
+                >
+                  Клиенты
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={
+                    activePage === 'main' ? 'nav-item active' : 'nav-item'
+                  }
+                  onClick={() => setActivePage('main')}
+                >
+                  Главная
+                </button>
+                <button
+                  type="button"
+                  className={
+                    activePage === 'history' ? 'nav-item active' : 'nav-item'
+                  }
+                  onClick={() => setActivePage('history')}
+                >
+                  История
+                </button>
+                <button
+                  type="button"
+                  className={
+                    activePage === 'suppliers'
+                      ? 'nav-item active'
+                      : 'nav-item'
+                  }
+                  onClick={() => setActivePage('suppliers')}
+                >
+                  Поставщики
+                </button>
+              </>
+            )}
           </nav>
         </div>
 
-        <div className="profile-box">
+        <div
+          className="profile-box"
+          onClick={() => {
+            if (isAdmin) setAdminPage('profile');
+            else setActivePage('profile');
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="avatar" />
           <div>
-            <div>Магазин Ромашка</div>
-            <div className="muted">тестовый режим</div>
+            <div>{authUser.name}</div>
+            <div className="muted">
+              {isAdmin ? 'администратор' : 'клиент'}
+            </div>
           </div>
         </div>
       </aside>
 
       <main className="workspace">
-        {activePage === 'main' && (
+        {/* ========== ADMIN: Clients list ========== */}
+        {isAdmin && adminPage === 'clients' && !selectedClientId && (
           <>
             <div className="workspace-header">
               <div>
-                <h1>Загрузите продажи и получите автозаказ по вашим поставщикам</h1>
+                <h1>Клиенты</h1>
+                <p className="muted">
+                  Всего клиентов: {adminClients.length}
+                </p>
+              </div>
+              <div className="header-actions">
+                <button
+                  type="button"
+                  className="primary-button compact-btn"
+                  onClick={() => {
+                    setNewClientName('');
+                    setNewClientCreds(null);
+                    setCreateClientOpen(true);
+                  }}
+                >
+                  + Создать клиента
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void loadAdminClients()}
+                >
+                  Обновить
+                </button>
+              </div>
+            </div>
+
+            {adminError && <div className="error-box">{adminError}</div>}
+            {adminClientsLoading && (
+              <div className="card">Загружаю клиентов…</div>
+            )}
+
+            {!adminClientsLoading && adminClients.length === 0 && (
+              <div className="card">
+                Клиентов пока нет. Создайте первого клиента.
+              </div>
+            )}
+
+            {!adminClientsLoading && adminClients.length > 0 && (
+              <div className="suppliers-grid">
+                {adminClients.map((client) => (
+                  <div
+                    key={client.id}
+                    className={`card sup-card ${!client.isActive ? 'card-inactive' : ''}`}
+                  >
+                    <div className="sup-card-top">
+                      <h3>{client.name}</h3>
+                      <div className="muted">
+                        Логин: <strong>{client.login}</strong>
+                      </div>
+                    </div>
+                    <div className="sup-card-stat">
+                      Поставщиков: {client.suppliersCount} · Прогонов:{' '}
+                      {client.runsCount}
+                    </div>
+                    <div className="sup-card-stat">
+                      <span
+                        className={
+                          client.isActive
+                            ? 'item-badge item-active'
+                            : 'item-badge item-inactive'
+                        }
+                      >
+                        {client.isActive ? 'Активен' : 'Деактивирован'}
+                      </span>
+                    </div>
+                    <div className="sup-card-actions">
+                      <button
+                        type="button"
+                        className="action-btn action-open"
+                        onClick={() => void openClientDetail(client.id)}
+                      >
+                        Открыть
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn action-delete"
+                        onClick={() => void handleToggleClient(client.id)}
+                      >
+                        {client.isActive ? 'Деактивировать' : 'Активировать'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ========== ADMIN: Client detail ========== */}
+        {isAdmin && adminPage === 'client-detail' && selectedClientId && (
+          <>
+            <div className="workspace-header">
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 12 }}
+              >
+                <button
+                  type="button"
+                  className="back-btn"
+                  onClick={() => {
+                    setSelectedClientId(null);
+                    setAdminPage('clients');
+                  }}
+                >
+                  ←
+                </button>
+                <div>
+                  <h1>{selectedClientDetail?.user?.name || 'Клиент'}</h1>
+                  <p className="muted">
+                    Логин: {selectedClientDetail?.user?.login} · Создан:{' '}
+                    {formatDateTime(
+                      selectedClientDetail?.user?.createdAt || null,
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="header-actions">
+                <button
+                  type="button"
+                  className="action-btn action-edit"
+                  onClick={() => {
+                    setEditClientName(
+                      selectedClientDetail?.user?.name || '',
+                    );
+                    setEditClientLogin(
+                      selectedClientDetail?.user?.login || '',
+                    );
+                    setEditClientOpen(true);
+                  }}
+                >
+                  Изменить
+                </button>
+                <button
+                  type="button"
+                  className="action-btn action-open"
+                  onClick={() => {
+                    setNewPassword('');
+                    setShowNewPassword(false);
+                    setChangePasswordOpen(true);
+                  }}
+                >
+                  Сменить пароль
+                </button>
+              </div>
+            </div>
+
+            {adminError && <div className="error-box">{adminError}</div>}
+
+            <div className="meta-grid" style={{ marginBottom: 20 }}>
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="meta-label">Поставщиков</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>
+                  {selectedClientDetail?.suppliersCount ?? 0}
+                </div>
+              </div>
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="meta-label">Автозаказов</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>
+                  {selectedClientDetail?.runsCount ?? 0}
+                </div>
+              </div>
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="meta-label">Статус</div>
+                <div>
+                  <span
+                    className={
+                      selectedClientDetail?.user?.isActive
+                        ? 'item-badge item-active'
+                        : 'item-badge item-inactive'
+                    }
+                  >
+                    {selectedClientDetail?.user?.isActive
+                      ? 'Активен'
+                      : 'Деактивирован'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Поставщики клиента</h3>
+              {clientSuppliers.length === 0 ? (
+                <div className="empty-box" style={{ marginTop: 8 }}>
+                  У клиента пока нет поставщиков.
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Код</th>
+                        <th>Название</th>
+                        <th>Товаров</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientSuppliers.map((s) => (
+                        <tr key={s.code}>
+                          <td>{s.code}</td>
+                          <td>{s.name}</td>
+                          <td>{s.items.length}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3>История автозаказов</h3>
+              {clientHistory.length === 0 ? (
+                <div className="empty-box" style={{ marginTop: 8 }}>
+                  У клиента пока нет автозаказов.
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Дата</th>
+                        <th>Файл</th>
+                        <th>Статус</th>
+                        <th>Поставщиков</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientHistory.map((h: any) => (
+                        <tr key={h.runId}>
+                          <td>{formatDateTime(h.createdAt)}</td>
+                          <td>{h.sourceFileName}</td>
+                          <td>
+                            <StatusBadge status={h.status} />
+                          </td>
+                          <td>{h.suppliersCount ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ========== ADMIN: Profile ========== */}
+        {isAdmin && adminPage === 'profile' && (
+          <>
+            <div className="workspace-header">
+              <h1>Профиль администратора</h1>
+            </div>
+            <div className="card">
+              <div className="meta-grid">
+                <div>
+                  <div className="meta-label">Имя</div>
+                  <div>{authUser.name}</div>
+                </div>
+                <div>
+                  <div className="meta-label">Логин</div>
+                  <div>{authUser.login}</div>
+                </div>
+                <div>
+                  <div className="meta-label">Роль</div>
+                  <div>Администратор</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setProfileName(authUser.name);
+                    setProfileEditOpen(true);
+                  }}
+                >
+                  Изменить имя
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => void handleLogout()}
+                >
+                  Выйти из аккаунта
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ========== CLIENT: Main ========== */}
+        {!isAdmin && activePage === 'main' && (
+          <>
+            <div className="workspace-header">
+              <div>
+                <h1>
+                  Загрузите продажи и получите автозаказ по вашим поставщикам
+                </h1>
                 <p className="muted">
                   Выберите формат данных из вашей учётной системы
                 </p>
               </div>
-
               <button
                 type="button"
                 className="settings-toggle"
@@ -921,7 +1537,6 @@ export default function HomePage() {
                     Закрыть
                   </button>
                 </div>
-
                 <div className="settings-grid">
                   <label>
                     Заказ на дней
@@ -959,7 +1574,9 @@ export default function HomePage() {
                     <input
                       type="number"
                       value={settings.packSize}
-                      onChange={(e) => change('packSize', Number(e.target.value))}
+                      onChange={(e) =>
+                        change('packSize', Number(e.target.value))
+                      }
                     />
                   </label>
                   <label>
@@ -985,11 +1602,12 @@ export default function HomePage() {
                     <input
                       type="date"
                       value={settings.deliveryDate}
-                      onChange={(e) => change('deliveryDate', e.target.value)}
+                      onChange={(e) =>
+                        change('deliveryDate', e.target.value)
+                      }
                     />
                   </label>
                 </div>
-
                 <div className="settings-actions">
                   <button
                     type="button"
@@ -1006,34 +1624,41 @@ export default function HomePage() {
             )}
 
             <div className="formats-grid">
-              <form className="format-card format-active" onSubmit={handleSubmit}>
+              <form
+                className="format-card format-active"
+                onSubmit={handleSubmit}
+              >
                 <div className="format-icon">📊</div>
                 <div className="format-card-body">
                   <h3>Формат iiko</h3>
                   <p className="muted">
-                    Загрузите XLSX-файл продаж из iiko. Система сверит штрихкоды
-                    с каталогами поставщиков и сформирует документы заказа.
+                    Загрузите XLSX-файл продаж из iiko. Система сверит
+                    штрихкоды с каталогами поставщиков и сформирует документы
+                    заказа.
                   </p>
-
                   <div className="upload-area">
                     <input
                       type="file"
                       accept=".xlsx"
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      onChange={(e) =>
+                        setFile(e.target.files?.[0] ?? null)
+                      }
                     />
                     <div className="muted file-hint">
-                      {file ? `Выбран: ${file.name}` : 'Выберите .xlsx файл'}
+                      {file
+                        ? `Выбран: ${file.name}`
+                        : 'Выберите .xlsx файл'}
                     </div>
                   </div>
-
                   <button
                     type="submit"
                     className="primary-button"
                     disabled={isLoading}
                   >
-                    {isLoading ? 'Считаю автозаказ…' : 'Рассчитать автозаказ'}
+                    {isLoading
+                      ? 'Считаю автозаказ…'
+                      : 'Рассчитать автозаказ'}
                   </button>
-
                   {error && <div className="error-box">{error}</div>}
                 </div>
               </form>
@@ -1044,8 +1669,7 @@ export default function HomePage() {
                 <div className="format-card-body">
                   <h3>Формат 1С</h3>
                   <p className="muted">
-                    Поддержка выгрузки продаж из 1С:Предприятие. Формат будет
-                    доступен в ближайшем обновлении.
+                    Поддержка выгрузки продаж из 1С:Предприятие.
                   </p>
                 </div>
               </div>
@@ -1057,8 +1681,7 @@ export default function HomePage() {
                   <h3>Формат МойСклад</h3>
                   <p className="muted">
                     Интеграция с сервисом МойСклад для автоматической загрузки
-                    данных о продажах. Формат будет доступен в ближайшем
-                    обновлении.
+                    данных о продажах.
                   </p>
                 </div>
               </div>
@@ -1076,7 +1699,7 @@ export default function HomePage() {
                   <h3>Загрузите свои продажи</h3>
                   <p className="muted">
                     Загрузите данные в произвольном формате — система обработает
-                    их с помощью ИИ и сформирует автозаказ.
+                    их с помощью ИИ.
                   </p>
                   <div className="ai-hint">Обработка с помощью ИИ</div>
                 </div>
@@ -1085,17 +1708,17 @@ export default function HomePage() {
           </>
         )}
 
-        {activePage === 'history' && (
+        {/* ========== CLIENT: History ========== */}
+        {!isAdmin && activePage === 'history' && (
           <>
             <div className="workspace-header">
               <div>
                 <h1>История</h1>
                 <p className="muted">
-                  Здесь лежат все прогоны автозаказа: исходные файлы, документы и
-                  детали расчёта.
+                  Все прогоны автозаказа: исходные файлы, документы и детали
+                  расчёта.
                 </p>
               </div>
-
               <button
                 type="button"
                 className="secondary-button"
@@ -1106,8 +1729,9 @@ export default function HomePage() {
             </div>
 
             {historyError && <div className="error-box">{historyError}</div>}
-
-            {historyLoading && <div className="card">Загружаю историю…</div>}
+            {historyLoading && (
+              <div className="card">Загружаю историю…</div>
+            )}
 
             {!historyLoading && historyItems.length === 0 && (
               <div className="card">Здесь пока пусто.</div>
@@ -1143,7 +1767,6 @@ export default function HomePage() {
                     </button>
                   ))}
                 </div>
-
                 <div className="history-detail">
                   {selectedHistoryRun ? (
                     <ResultView detail={selectedHistoryRun} />
@@ -1158,7 +1781,8 @@ export default function HomePage() {
           </>
         )}
 
-        {activePage === 'suppliers' && !selectedSupplierCode && (
+        {/* ========== CLIENT: Suppliers list ========== */}
+        {!isAdmin && activePage === 'suppliers' && !selectedSupplierCode && (
           <>
             <div className="workspace-header">
               <div>
@@ -1167,7 +1791,6 @@ export default function HomePage() {
                   Управление поставщиками и их каталогами товаров
                 </p>
               </div>
-
               <div className="header-actions">
                 <button
                   type="button"
@@ -1192,14 +1815,11 @@ export default function HomePage() {
             {suppliersLoading && (
               <div className="card">Загружаю поставщиков…</div>
             )}
-
             {!suppliersLoading && suppliers.length === 0 && (
               <div className="card">
-                Поставщиков пока нет. Нажмите «Добавить поставщика», чтобы
-                создать первого.
+                Поставщиков пока нет. Нажмите «Добавить поставщика».
               </div>
             )}
-
             {!suppliersLoading && suppliers.length > 0 && (
               <div className="suppliers-grid">
                 {suppliers.map((supplier) => (
@@ -1209,12 +1829,7 @@ export default function HomePage() {
                       <div className="muted">{supplier.code}</div>
                     </div>
                     <div className="sup-card-stat">
-                      {supplier.items.length}{' '}
-                      {supplier.items.length === 1
-                        ? 'товар'
-                        : supplier.items.length < 5
-                          ? 'товара'
-                          : 'товаров'}
+                      {supplier.items.length} товаров
                     </div>
                     <div className="sup-card-actions">
                       <button
@@ -1248,10 +1863,13 @@ export default function HomePage() {
           </>
         )}
 
-        {activePage === 'suppliers' && selectedSupplierCode && (
+        {/* ========== CLIENT: Supplier detail ========== */}
+        {!isAdmin && activePage === 'suppliers' && selectedSupplierCode && (
           <>
             <div className="workspace-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 12 }}
+              >
                 <button
                   type="button"
                   className="back-btn"
@@ -1263,11 +1881,10 @@ export default function HomePage() {
                   <h1>{selectedSupplier?.name || 'Поставщик'}</h1>
                   <p className="muted">
                     {selectedSupplierCode} ·{' '}
-                    {selectedSupplier?.items.length ?? 0} товаров в каталоге
+                    {selectedSupplier?.items.length ?? 0} товаров
                   </p>
                 </div>
               </div>
-
               <div className="header-actions">
                 <button
                   type="button"
@@ -1294,8 +1911,7 @@ export default function HomePage() {
 
             {selectedSupplier && selectedSupplier.items.length === 0 && (
               <div className="card">
-                Каталог пуст. Нажмите «Добавить товар», чтобы начать
-                наполнение.
+                Каталог пуст. Нажмите «Добавить товар».
               </div>
             )}
 
@@ -1359,150 +1975,439 @@ export default function HomePage() {
           </>
         )}
 
-        {supplierModalOpen && (
-          <div
-            className="modal-overlay"
-            onClick={() => setSupplierModalOpen(false)}
-          >
-            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-              <h2>
-                {supplierModalMode === 'create'
-                  ? 'Новый поставщик'
-                  : 'Редактирование поставщика'}
-              </h2>
-              <label>
-                Название
-                <input
-                  type="text"
-                  value={supplierFormName}
-                  onChange={(e) => setSupplierFormName(e.target.value)}
-                  placeholder="Введите название поставщика"
-                  autoFocus
-                />
-              </label>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setSupplierModalOpen(false)}
-                >
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  className="primary-button compact-btn"
-                  onClick={() => void handleSaveSupplier()}
-                  disabled={!supplierFormName.trim()}
-                >
-                  {supplierModalMode === 'create' ? 'Создать' : 'Сохранить'}
-                </button>
-              </div>
+        {/* ========== CLIENT: Profile ========== */}
+        {!isAdmin && activePage === 'profile' && (
+          <>
+            <div className="workspace-header">
+              <h1>Профиль</h1>
             </div>
-          </div>
-        )}
-
-        {itemModalOpen && (
-          <div
-            className="modal-overlay"
-            onClick={() => setItemModalOpen(false)}
-          >
-            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-              <h2>
-                {itemModalMode === 'create'
-                  ? 'Новый товар'
-                  : 'Редактирование товара'}
-              </h2>
-              <label>
-                Штрихкод
-                <input
-                  type="text"
-                  value={itemFormBarcode}
-                  onChange={(e) => setItemFormBarcode(e.target.value)}
-                  placeholder="Введите штрихкод"
-                  autoFocus
-                />
-              </label>
-              <label>
-                Название
-                <input
-                  type="text"
-                  value={itemFormName}
-                  onChange={(e) => setItemFormName(e.target.value)}
-                  placeholder="Введите название товара"
-                />
-              </label>
-              <label>
-                Цена
-                <input
-                  type="number"
-                  step="0.01"
-                  value={itemFormPrice}
-                  onChange={(e) => setItemFormPrice(e.target.value)}
-                  placeholder="0.00"
-                />
-              </label>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setItemModalOpen(false)}
-                >
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  className="primary-button compact-btn"
-                  onClick={() => void handleSaveItem()}
-                  disabled={
-                    !itemFormBarcode.trim() || !itemFormName.trim()
-                  }
-                >
-                  {itemModalMode === 'create' ? 'Добавить' : 'Сохранить'}
-                </button>
+            <div className="card">
+              <div className="meta-grid">
+                <div>
+                  <div className="meta-label">Название</div>
+                  <div>{authUser.name}</div>
+                </div>
+                <div>
+                  <div className="meta-label">Логин</div>
+                  <div>{authUser.login}</div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {deleteConfirmType && (
-          <div
-            className="modal-overlay"
-            onClick={() => setDeleteConfirmType(null)}
-          >
-            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-              <h2>Подтверждение удаления</h2>
-              <p>
-                Вы уверены, что хотите удалить{' '}
-                {deleteConfirmType === 'supplier'
-                  ? 'поставщика'
-                  : 'товар'}{' '}
-                <strong>«{deleteConfirmName}»</strong>?
-              </p>
-              {deleteConfirmType === 'supplier' && (
-                <p className="muted">
-                  Все товары из каталога этого поставщика также будут удалены.
-                </p>
-              )}
-              <div className="modal-actions">
+              <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => setDeleteConfirmType(null)}
+                  onClick={() => {
+                    setProfileName(authUser.name);
+                    setProfileEditOpen(true);
+                  }}
                 >
-                  Отмена
+                  Изменить название
                 </button>
                 <button
                   type="button"
                   className="danger-button"
-                  onClick={() => void confirmDelete()}
+                  onClick={() => void handleLogout()}
                 >
-                  Удалить
+                  Выйти из аккаунта
                 </button>
               </div>
             </div>
-          </div>
+          </>
         )}
       </main>
+
+      {/* ========== MODALS ========== */}
+
+      {createClientOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setCreateClientOpen(false);
+            setNewClientCreds(null);
+          }}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            {!newClientCreds ? (
+              <>
+                <h2>Новый клиент</h2>
+                <label>
+                  Название
+                  <input
+                    type="text"
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    placeholder="Например: Магазин Ромашка"
+                    autoFocus
+                  />
+                </label>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setCreateClientOpen(false)}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-btn"
+                    onClick={() => void handleCreateClient()}
+                    disabled={!newClientName.trim()}
+                  >
+                    Создать
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2>Клиент создан</h2>
+                <p className="muted">
+                  Сохраните эти данные. Пароль показывается только один раз.
+                </p>
+                <div className="creds-row">
+                  <div className="creds-label">Логин</div>
+                  <div className="creds-value">
+                    <code>{newClientCreds.login}</code>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() =>
+                        copyToClipboard(newClientCreds.login)
+                      }
+                    >
+                      Копировать
+                    </button>
+                  </div>
+                </div>
+                <div className="creds-row">
+                  <div className="creds-label">Пароль</div>
+                  <div className="creds-value">
+                    <code>{newClientCreds.password}</code>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() =>
+                        copyToClipboard(newClientCreds.password)
+                      }
+                    >
+                      Копировать
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-btn"
+                    onClick={() => {
+                      setCreateClientOpen(false);
+                      setNewClientCreds(null);
+                    }}
+                  >
+                    Готово
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {editClientOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setEditClientOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>Редактирование клиента</h2>
+            <label>
+              Название
+              <input
+                type="text"
+                value={editClientName}
+                onChange={(e) => setEditClientName(e.target.value)}
+              />
+            </label>
+            <label>
+              Логин
+              <input
+                type="text"
+                value={editClientLogin}
+                onChange={(e) => setEditClientLogin(e.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setEditClientOpen(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-btn"
+                onClick={() => void handleEditClient()}
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {changePasswordOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setChangePasswordOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>Смена пароля</h2>
+            {!showNewPassword ? (
+              <>
+                <label>
+                  Новый пароль
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Минимум 6 символов"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={generateRandomPassword}
+                    >
+                      Сгенерировать
+                    </button>
+                  </div>
+                </label>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setChangePasswordOpen(false)}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-btn"
+                    onClick={() => void handleChangePassword()}
+                    disabled={newPassword.length < 6}
+                  >
+                    Сменить пароль
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="muted">Пароль успешно изменён.</p>
+                <div className="creds-row">
+                  <div className="creds-label">Новый пароль</div>
+                  <div className="creds-value">
+                    <code>{newPassword}</code>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => copyToClipboard(newPassword)}
+                    >
+                      Копировать
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-btn"
+                    onClick={() => setChangePasswordOpen(false)}
+                  >
+                    Готово
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {profileEditOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setProfileEditOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>Изменить название</h2>
+            <label>
+              Название
+              <input
+                type="text"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setProfileEditOpen(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-btn"
+                onClick={() => void handleUpdateProfile()}
+                disabled={!profileName.trim()}
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {supplierModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setSupplierModalOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              {supplierModalMode === 'create'
+                ? 'Новый поставщик'
+                : 'Редактирование поставщика'}
+            </h2>
+            <label>
+              Название
+              <input
+                type="text"
+                value={supplierFormName}
+                onChange={(e) => setSupplierFormName(e.target.value)}
+                placeholder="Введите название поставщика"
+                autoFocus
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setSupplierModalOpen(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-btn"
+                onClick={() => void handleSaveSupplier()}
+                disabled={!supplierFormName.trim()}
+              >
+                {supplierModalMode === 'create' ? 'Создать' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {itemModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setItemModalOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              {itemModalMode === 'create'
+                ? 'Новый товар'
+                : 'Редактирование товара'}
+            </h2>
+            <label>
+              Штрихкод
+              <input
+                type="text"
+                value={itemFormBarcode}
+                onChange={(e) => setItemFormBarcode(e.target.value)}
+                placeholder="Введите штрихкод"
+                autoFocus
+              />
+            </label>
+            <label>
+              Название
+              <input
+                type="text"
+                value={itemFormName}
+                onChange={(e) => setItemFormName(e.target.value)}
+                placeholder="Введите название товара"
+              />
+            </label>
+            <label>
+              Цена
+              <input
+                type="number"
+                step="0.01"
+                value={itemFormPrice}
+                onChange={(e) => setItemFormPrice(e.target.value)}
+                placeholder="0.00"
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setItemModalOpen(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-btn"
+                onClick={() => void handleSaveItem()}
+                disabled={!itemFormBarcode.trim() || !itemFormName.trim()}
+              >
+                {itemModalMode === 'create' ? 'Добавить' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmType && (
+        <div
+          className="modal-overlay"
+          onClick={() => setDeleteConfirmType(null)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>Подтверждение удаления</h2>
+            <p>
+              Вы уверены, что хотите удалить{' '}
+              {deleteConfirmType === 'supplier' ? 'поставщика' : 'товар'}{' '}
+              <strong>«{deleteConfirmName}»</strong>?
+            </p>
+            {deleteConfirmType === 'supplier' && (
+              <p className="muted">
+                Все товары этого поставщика также будут удалены.
+              </p>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setDeleteConfirmType(null)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => void confirmDelete()}
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMessage && (
         <Toast message={toastMessage} onClose={() => setToastMessage('')} />
@@ -1516,7 +2421,6 @@ export default function HomePage() {
           background: #0f172a;
           color: #e5e7eb;
         }
-
         .sidebar {
           display: flex;
           flex-direction: column;
@@ -1525,20 +2429,29 @@ export default function HomePage() {
           border-right: 1px solid rgba(255, 255, 255, 0.08);
           background: #111827;
         }
-
         .logo {
           font-size: 24px;
           font-weight: 700;
-          margin-bottom: 24px;
+          margin-bottom: 8px;
           color: #f8fafc;
         }
-
+        .role-tag {
+          display: inline-block;
+          background: rgba(139, 92, 246, 0.18);
+          color: #c4b5fd;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 999px;
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
         .nav {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
-
         .nav-item {
           padding: 12px 14px;
           border-radius: 12px;
@@ -1549,12 +2462,10 @@ export default function HomePage() {
           cursor: pointer;
           font-size: 15px;
         }
-
         .nav-item:hover,
         .nav-item.active {
           background: rgba(255, 255, 255, 0.08);
         }
-
         .profile-box {
           display: flex;
           align-items: center;
@@ -1563,19 +2474,17 @@ export default function HomePage() {
           border-radius: 14px;
           background: rgba(255, 255, 255, 0.05);
         }
-
         .avatar {
           width: 36px;
           height: 36px;
           border-radius: 999px;
           background: linear-gradient(135deg, #34d399, #60a5fa);
+          flex-shrink: 0;
         }
-
         .workspace {
           padding: 24px;
           overflow-y: auto;
         }
-
         .workspace-header {
           display: flex;
           align-items: flex-start;
@@ -1583,7 +2492,6 @@ export default function HomePage() {
           gap: 16px;
           margin-bottom: 20px;
         }
-
         .workspace h1,
         .workspace h2,
         .workspace h3,
@@ -1591,7 +2499,12 @@ export default function HomePage() {
         .workspace strong {
           color: #f8fafc;
         }
-
+        .header-actions {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-shrink: 0;
+        }
         .settings-toggle,
         .primary-button,
         .secondary-button,
@@ -1603,7 +2516,6 @@ export default function HomePage() {
           font-size: 14px;
           text-decoration: none;
         }
-
         .settings-toggle {
           width: 44px;
           height: 44px;
@@ -1611,7 +2523,6 @@ export default function HomePage() {
           color: #e5e7eb;
           flex-shrink: 0;
         }
-
         .primary-button {
           background: #22c55e;
           color: #0b1220;
@@ -1619,12 +2530,15 @@ export default function HomePage() {
           font-weight: 700;
           width: 100%;
         }
-
         .primary-button:disabled {
           opacity: 0.7;
           cursor: wait;
         }
-
+        .compact-btn {
+          width: auto;
+          padding: 10px 16px;
+          white-space: nowrap;
+        }
         .secondary-button,
         .link-button {
           background: #1f2937;
@@ -1634,7 +2548,6 @@ export default function HomePage() {
           align-items: center;
           justify-content: center;
         }
-
         .danger-button {
           background: rgba(239, 68, 68, 0.18);
           color: #fecaca;
@@ -1647,12 +2560,10 @@ export default function HomePage() {
           cursor: pointer;
           font-size: 14px;
         }
-
         .danger-button:disabled {
           opacity: 0.7;
           cursor: wait;
         }
-
         .card,
         .result-card,
         .history-item,
@@ -1663,12 +2574,13 @@ export default function HomePage() {
           padding: 18px;
           color: #e5e7eb;
         }
-
         .card,
         .result-card {
           margin-bottom: 16px;
         }
-
+        .card-inactive {
+          opacity: 0.55;
+        }
         .card-header,
         .supplier-header,
         .result-header,
@@ -1678,29 +2590,24 @@ export default function HomePage() {
           justify-content: space-between;
           gap: 12px;
         }
-
         .settings-grid,
         .meta-grid,
         .suppliers-grid {
           display: grid;
           gap: 12px;
         }
-
         .settings-grid {
           grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           margin-top: 12px;
         }
-
         .settings-actions {
           margin-top: 16px;
           display: flex;
           justify-content: flex-end;
         }
-
         .suppliers-grid {
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
         }
-
         label {
           display: flex;
           flex-direction: column;
@@ -1708,7 +2615,6 @@ export default function HomePage() {
           font-size: 14px;
           color: #e5e7eb;
         }
-
         input {
           border-radius: 10px;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1716,29 +2622,24 @@ export default function HomePage() {
           color: #e5e7eb;
           padding: 10px 12px;
         }
-
         .muted {
           color: #94a3b8;
           font-size: 14px;
         }
-
         .error-box,
         .empty-box {
           margin-top: 12px;
           padding: 12px 14px;
           border-radius: 12px;
         }
-
         .error-box {
           background: rgba(239, 68, 68, 0.14);
           color: #fecaca;
         }
-
         .empty-box {
           background: rgba(255, 255, 255, 0.04);
           color: #cbd5e1;
         }
-
         .status-badge {
           padding: 6px 10px;
           border-radius: 999px;
@@ -1746,52 +2647,42 @@ export default function HomePage() {
           font-weight: 700;
           white-space: nowrap;
         }
-
         .status-completed {
           background: rgba(34, 197, 94, 0.18);
           color: #86efac;
         }
-
         .status-failed {
           background: rgba(239, 68, 68, 0.18);
           color: #fca5a5;
         }
-
         .status-processing {
           background: rgba(59, 130, 246, 0.18);
           color: #93c5fd;
         }
-
         .meta-grid {
           grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
           margin-top: 12px;
         }
-
         .meta-label {
           color: #94a3b8;
           font-size: 12px;
           margin-bottom: 4px;
         }
-
         .toolbar {
           margin-top: 14px;
           margin-bottom: 8px;
         }
-
         .section-block {
           margin-top: 18px;
         }
-
         .table-wrap {
           overflow-x: auto;
           margin-top: 12px;
         }
-
         table {
           width: 100%;
           border-collapse: collapse;
         }
-
         th,
         td {
           text-align: left;
@@ -1801,40 +2692,33 @@ export default function HomePage() {
           font-size: 14px;
           color: #e5e7eb;
         }
-
         th {
           color: #94a3b8;
           font-weight: 600;
         }
-
         .history-layout {
           display: grid;
           grid-template-columns: 360px 1fr;
           gap: 16px;
         }
-
         .history-list {
           display: flex;
           flex-direction: column;
           gap: 12px;
         }
-
         .history-item {
           width: 100%;
           text-align: left;
           cursor: pointer;
           color: #e5e7eb;
         }
-
         .history-item strong {
           color: #f8fafc;
         }
-
         .history-item.active {
           border-color: rgba(96, 165, 250, 0.65);
           box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35);
         }
-
         .history-item-meta {
           margin-top: 10px;
           display: flex;
@@ -1843,52 +2727,32 @@ export default function HomePage() {
           color: #cbd5e1;
           font-size: 13px;
         }
-
         .supplier-card {
           margin-top: 14px;
         }
-
         .supplier-stats {
           margin-top: 10px;
           color: #cbd5e1;
         }
-
-        .header-actions {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-          flex-shrink: 0;
-        }
-
-        .compact-btn {
-          width: auto;
-          padding: 10px 16px;
-          white-space: nowrap;
-        }
-
         .sup-card {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
-
         .sup-card-top h3 {
           margin: 0 0 4px 0;
         }
-
         .sup-card-stat {
           color: #94a3b8;
           font-size: 14px;
           margin-top: 4px;
         }
-
         .sup-card-actions {
           display: flex;
           gap: 8px;
           margin-top: 8px;
           flex-wrap: wrap;
         }
-
         .action-btn {
           padding: 7px 14px;
           border-radius: 10px;
@@ -1896,42 +2760,34 @@ export default function HomePage() {
           cursor: pointer;
           font-size: 13px;
           font-weight: 600;
-          transition: background 0.15s, opacity 0.15s;
+          transition: background 0.15s;
         }
-
         .action-open {
           background: rgba(96, 165, 250, 0.15);
           color: #93c5fd;
         }
-
         .action-open:hover {
           background: rgba(96, 165, 250, 0.25);
         }
-
         .action-edit {
           background: rgba(250, 204, 21, 0.12);
           color: #fde68a;
         }
-
         .action-edit:hover {
           background: rgba(250, 204, 21, 0.22);
         }
-
         .action-delete {
           background: rgba(239, 68, 68, 0.12);
           color: #fca5a5;
         }
-
         .action-delete:hover {
           background: rgba(239, 68, 68, 0.22);
         }
-
         .row-actions {
           display: flex;
           gap: 6px;
           justify-content: flex-end;
         }
-
         .back-btn {
           width: 40px;
           height: 40px;
@@ -1945,19 +2801,14 @@ export default function HomePage() {
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
-          transition: background 0.15s;
         }
-
         .back-btn:hover {
           background: #334155;
         }
-
         .mono-cell {
           font-family: 'SF Mono', 'Fira Code', monospace;
           font-size: 13px;
-          letter-spacing: 0.3px;
         }
-
         .item-badge {
           padding: 4px 10px;
           border-radius: 999px;
@@ -1965,17 +2816,14 @@ export default function HomePage() {
           font-weight: 700;
           white-space: nowrap;
         }
-
         .item-active {
           background: rgba(34, 197, 94, 0.15);
           color: #86efac;
         }
-
         .item-inactive {
           background: rgba(148, 163, 184, 0.15);
           color: #94a3b8;
         }
-
         .modal-overlay {
           position: fixed;
           inset: 0;
@@ -1986,7 +2834,6 @@ export default function HomePage() {
           z-index: 1000;
           animation: fadeIn 0.15s ease;
         }
-
         .modal-box {
           background: #1e293b;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1998,32 +2845,60 @@ export default function HomePage() {
           flex-direction: column;
           gap: 16px;
         }
-
         .modal-box h2 {
           margin: 0;
           font-size: 18px;
         }
-
         .modal-box p {
           margin: 0;
           line-height: 1.5;
         }
-
         .modal-actions {
           display: flex;
           gap: 10px;
           justify-content: flex-end;
           margin-top: 8px;
         }
-
-        /* --- Format cards grid --- */
-
+        .creds-row {
+          background: #0f172a;
+          border-radius: 12px;
+          padding: 14px;
+        }
+        .creds-label {
+          color: #94a3b8;
+          font-size: 12px;
+          margin-bottom: 6px;
+        }
+        .creds-value {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .creds-value code {
+          font-size: 16px;
+          font-weight: 600;
+          color: #f8fafc;
+          flex: 1;
+        }
+        .copy-btn {
+          background: rgba(96, 165, 250, 0.15);
+          color: #93c5fd;
+          border: none;
+          border-radius: 8px;
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .copy-btn:hover {
+          background: rgba(96, 165, 250, 0.25);
+        }
         .formats-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
           gap: 16px;
         }
-
         .format-card {
           position: relative;
           background: #111827;
@@ -2035,38 +2910,31 @@ export default function HomePage() {
           gap: 4px;
           transition: border-color 0.2s, box-shadow 0.2s;
         }
-
         .format-card h3 {
           margin: 0;
         }
-
         .format-icon {
           font-size: 36px;
           margin-bottom: 8px;
         }
-
         .format-card-body {
           display: flex;
           flex-direction: column;
           gap: 12px;
           flex: 1;
         }
-
         .format-active {
           border-color: rgba(34, 197, 94, 0.4);
         }
-
         .format-active:hover {
           border-color: rgba(34, 197, 94, 0.6);
           box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
         }
-
         .upload-area {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
-
         .upload-area input[type='file'] {
           padding: 10px;
           border: 1px dashed rgba(34, 197, 94, 0.4);
@@ -2075,16 +2943,13 @@ export default function HomePage() {
           color: #e5e7eb;
           cursor: pointer;
         }
-
         .file-hint {
           font-size: 13px;
         }
-
         .format-soon {
           opacity: 0.55;
           cursor: default;
         }
-
         .badge-soon {
           position: absolute;
           top: 14px;
@@ -2098,17 +2963,13 @@ export default function HomePage() {
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
-
         .format-ai {
           cursor: pointer;
           border-color: rgba(139, 92, 246, 0.3);
         }
-
         .format-ai:hover {
           border-color: rgba(139, 92, 246, 0.55);
-          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
         }
-
         .ai-hint {
           display: inline-flex;
           align-items: center;
@@ -2121,9 +2982,6 @@ export default function HomePage() {
           border-radius: 999px;
           width: fit-content;
         }
-
-        /* --- Supplier toggle & excel button --- */
-
         .supplier-toggle {
           display: flex;
           align-items: center;
@@ -2135,26 +2993,21 @@ export default function HomePage() {
           padding: 0;
           text-align: left;
         }
-
         .supplier-toggle h4 {
           margin: 0;
         }
-
         .section-toggle {
           margin-bottom: 8px;
         }
-
         .section-toggle h3 {
           margin: 0;
         }
-
         .toggle-icon {
           font-size: 12px;
           color: #94a3b8;
           width: 16px;
           flex-shrink: 0;
         }
-
         .excel-button {
           display: inline-flex;
           align-items: center;
@@ -2168,15 +3021,10 @@ export default function HomePage() {
           text-decoration: none;
           white-space: nowrap;
           flex-shrink: 0;
-          transition: background 0.15s;
         }
-
         .excel-button:hover {
           background: #16a34a;
         }
-
-        /* --- Toast --- */
-
         .toast-overlay {
           position: fixed;
           inset: 0;
@@ -2187,7 +3035,6 @@ export default function HomePage() {
           z-index: 1000;
           animation: fadeIn 0.2s ease;
         }
-
         .toast-box {
           background: #1e293b;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -2201,17 +3048,14 @@ export default function HomePage() {
           gap: 16px;
           text-align: center;
         }
-
         .toast-emoji {
           font-size: 48px;
         }
-
         .toast-text {
           font-size: 16px;
           color: #e5e7eb;
           line-height: 1.5;
         }
-
         .toast-close {
           background: #334155;
           color: #f8fafc;
@@ -2221,13 +3065,10 @@ export default function HomePage() {
           cursor: pointer;
           font-size: 14px;
           font-weight: 600;
-          transition: background 0.15s;
         }
-
         .toast-close:hover {
           background: #475569;
         }
-
         @keyframes fadeIn {
           from {
             opacity: 0;
@@ -2236,21 +3077,17 @@ export default function HomePage() {
             opacity: 1;
           }
         }
-
         @media (max-width: 1100px) {
           .app-shell {
             grid-template-columns: 1fr;
           }
-
           .sidebar {
             border-right: none;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           }
-
           .history-layout {
             grid-template-columns: 1fr;
           }
-
           .formats-grid {
             grid-template-columns: 1fr;
           }

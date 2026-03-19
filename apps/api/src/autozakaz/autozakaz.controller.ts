@@ -8,16 +8,25 @@ import {
   ParseFilePipeBuilder,
   Post,
   Put,
+  Req,
   Res,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AutozakazService } from './autozakaz.service';
+import { AuthGuard } from '../auth/auth.guard';
+import type { JwtPayload } from '../auth/auth.types';
+
+function getClientId(req: Request): string {
+  return ((req as any).user as JwtPayload).sub;
+}
 
 @Controller('autozakaz')
+@UseGuards(AuthGuard)
 export class AutozakazController {
   constructor(private readonly autozakazService: AutozakazService) {}
 
@@ -27,38 +36,42 @@ export class AutozakazController {
   }
 
   @Get('suppliers')
-  async suppliers() {
-    return this.autozakazService.getSuppliers();
+  async suppliers(@Req() req: Request) {
+    return this.autozakazService.getSuppliers(getClientId(req));
   }
 
   @Post('suppliers')
-  async createSupplier(@Body() body: { name: string }) {
+  async createSupplier(@Req() req: Request, @Body() body: { name: string }) {
     if (!body.name?.trim()) {
       throw new BadRequestException('Название поставщика обязательно');
     }
-    return this.autozakazService.createSupplier({ name: body.name.trim() });
+    return this.autozakazService.createSupplier(getClientId(req), {
+      name: body.name.trim(),
+    });
   }
 
   @Put('suppliers/:code')
   async updateSupplier(
+    @Req() req: Request,
     @Param('code') code: string,
     @Body() body: { name: string },
   ) {
     if (!body.name?.trim()) {
       throw new BadRequestException('Название поставщика обязательно');
     }
-    return this.autozakazService.updateSupplier(code, {
+    return this.autozakazService.updateSupplier(getClientId(req), code, {
       name: body.name.trim(),
     });
   }
 
   @Delete('suppliers/:code')
-  async deleteSupplier(@Param('code') code: string) {
-    return this.autozakazService.deleteSupplier(code);
+  async deleteSupplier(@Req() req: Request, @Param('code') code: string) {
+    return this.autozakazService.deleteSupplier(getClientId(req), code);
   }
 
   @Post('suppliers/:code/items')
   async addItem(
+    @Req() req: Request,
     @Param('code') code: string,
     @Body() body: { barcode: string; name: string; price: number },
   ) {
@@ -68,7 +81,7 @@ export class AutozakazController {
     if (!body.name?.trim()) {
       throw new BadRequestException('Название товара обязательно');
     }
-    return this.autozakazService.addSupplierItem(code, {
+    return this.autozakazService.addSupplierItem(getClientId(req), code, {
       barcode: body.barcode.trim(),
       name: body.name.trim(),
       price: Number(body.price) || 0,
@@ -77,38 +90,49 @@ export class AutozakazController {
 
   @Put('suppliers/:code/items/:barcode')
   async updateItem(
+    @Req() req: Request,
     @Param('code') code: string,
     @Param('barcode') barcode: string,
     @Body() body: { barcode?: string; name?: string; price?: number },
   ) {
-    return this.autozakazService.updateSupplierItem(code, barcode, {
-      barcode: body.barcode?.trim(),
-      name: body.name?.trim(),
-      price: body.price !== undefined ? Number(body.price) : undefined,
-    });
+    return this.autozakazService.updateSupplierItem(
+      getClientId(req),
+      code,
+      barcode,
+      {
+        barcode: body.barcode?.trim(),
+        name: body.name?.trim(),
+        price: body.price !== undefined ? Number(body.price) : undefined,
+      },
+    );
   }
 
   @Delete('suppliers/:code/items/:barcode')
   async deleteItem(
+    @Req() req: Request,
     @Param('code') code: string,
     @Param('barcode') barcode: string,
   ) {
-    return this.autozakazService.deleteSupplierItem(code, barcode);
+    return this.autozakazService.deleteSupplierItem(
+      getClientId(req),
+      code,
+      barcode,
+    );
   }
 
   @Get('history')
-  async history() {
-    return this.autozakazService.listHistory();
+  async history(@Req() req: Request) {
+    return this.autozakazService.listHistory(getClientId(req));
   }
 
   @Get('history/:runId')
-  async historyRun(@Param('runId') runId: string) {
-    return this.autozakazService.getHistoryRun(runId);
+  async historyRun(@Req() req: Request, @Param('runId') runId: string) {
+    return this.autozakazService.getHistoryRun(getClientId(req), runId);
   }
 
   @Delete('history')
-  async clearHistory() {
-    return this.autozakazService.clearHistory();
+  async clearHistory(@Req() req: Request) {
+    return this.autozakazService.clearHistory(getClientId(req));
   }
 
   @Post('iiko/upload')
@@ -118,6 +142,7 @@ export class AutozakazController {
     }),
   )
   async uploadIiko(
+    @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -137,16 +162,22 @@ export class AutozakazController {
     }
 
     const settings = this.autozakazService.parseSettings(settingsRaw);
-    return this.autozakazService.processIikoUpload(file, settings);
+    return this.autozakazService.processIikoUpload(
+      getClientId(req),
+      file,
+      settings,
+    );
   }
 
   @Get('runs/:runId/orders/:supplierCode')
   async downloadOrder(
+    @Req() req: Request,
     @Param('runId') runId: string,
     @Param('supplierCode') supplierCode: string,
     @Res() res: Response,
   ) {
     const file = await this.autozakazService.resolveOrderFile(
+      getClientId(req),
       runId,
       supplierCode,
     );
@@ -154,8 +185,15 @@ export class AutozakazController {
   }
 
   @Get('runs/:runId/source')
-  async downloadSource(@Param('runId') runId: string, @Res() res: Response) {
-    const file = await this.autozakazService.resolveSourceFile(runId);
+  async downloadSource(
+    @Req() req: Request,
+    @Param('runId') runId: string,
+    @Res() res: Response,
+  ) {
+    const file = await this.autozakazService.resolveSourceFile(
+      getClientId(req),
+      runId,
+    );
     return res.download(file.absolutePath, file.downloadName);
   }
 }

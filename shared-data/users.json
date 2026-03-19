@@ -1,0 +1,29 @@
+[
+  {
+    "id": "701a4db8-c54f-4651-b8d7-47eda9f1cfd9",
+    "login": "AZ12",
+    "passwordHash": "$2b$10$ov.RY8T6TP.vkCLxcvTNP.goLMYM1tHFIaDuE5uyGkjcHERKBjCxG",
+    "role": "admin",
+    "name": "Администратор",
+    "isActive": true,
+    "createdAt": "2026-03-19T14:55:46.092Z"
+  },
+  {
+    "id": "03670041-af55-4077-8609-f72a7ce83bbb",
+    "login": "client-4200",
+    "passwordHash": "$2b$10$FI5jWSwmGuZ7AzQt9i6ADeGQ492bxjXgCaETvm4zPBPTRtVv.Me3y",
+    "role": "client",
+    "name": "Магазин Ромашка",
+    "isActive": false,
+    "createdAt": "2026-03-19T14:56:31.815Z"
+  },
+  {
+    "id": "7a1645dd-f103-4a44-a914-7b7373fae366",
+    "login": "client-6855",
+    "passwordHash": "$2b$10$yWfeNoRfqM0tkWUv4MBD1.fbbeId.6ckbcKPXUnSDJ9ghiNy6WoG.",
+    "role": "client",
+    "name": "ИП Игорь Кяхярь",
+    "isActive": true,
+    "createdAt": "2026-03-19T15:01:08.150Z"
+  }
+]
