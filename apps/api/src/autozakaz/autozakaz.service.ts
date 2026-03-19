@@ -237,9 +237,162 @@ export class AutozakazService {
     }
   }
 
-  async getSuppliers(): Promise<unknown> {
+  private async readSuppliersData(): Promise<any[]> {
     const raw = await fs.readFile(this.suppliersFile, 'utf-8');
-    return JSON.parse(raw);
+    return JSON.parse(raw) as any[];
+  }
+
+  private async writeSuppliersData(data: any[]): Promise<void> {
+    await fs.writeFile(
+      this.suppliersFile,
+      JSON.stringify(data, null, 2),
+      'utf-8',
+    );
+  }
+
+  async getSuppliers(): Promise<unknown> {
+    return this.readSuppliersData();
+  }
+
+  async createSupplier(data: {
+    name: string;
+  }): Promise<{ code: string; name: string; items: any[] }> {
+    const suppliers = await this.readSuppliersData();
+
+    let maxNum = 0;
+    for (const s of suppliers) {
+      const match = /^SUP-(\d+)$/.exec(s.code);
+      if (match) {
+        maxNum = Math.max(maxNum, Number(match[1]));
+      }
+    }
+
+    const code = `SUP-${String(maxNum + 1).padStart(3, '0')}`;
+    const supplier = { code, name: data.name, items: [] as any[] };
+
+    suppliers.push(supplier);
+    await this.writeSuppliersData(suppliers);
+
+    return supplier;
+  }
+
+  async updateSupplier(
+    code: string,
+    data: { name: string },
+  ): Promise<{ code: string; name: string; items: any[] }> {
+    const suppliers = await this.readSuppliersData();
+    const supplier = suppliers.find((s) => s.code === code);
+
+    if (!supplier) {
+      throw new NotFoundException('Поставщик не найден');
+    }
+
+    supplier.name = data.name;
+    await this.writeSuppliersData(suppliers);
+
+    return supplier;
+  }
+
+  async deleteSupplier(code: string): Promise<{ ok: true }> {
+    const suppliers = await this.readSuppliersData();
+    const idx = suppliers.findIndex((s) => s.code === code);
+
+    if (idx === -1) {
+      throw new NotFoundException('Поставщик не найден');
+    }
+
+    suppliers.splice(idx, 1);
+    await this.writeSuppliersData(suppliers);
+
+    return { ok: true };
+  }
+
+  async addSupplierItem(
+    supplierCode: string,
+    item: { barcode: string; name: string; price: number },
+  ): Promise<{ ok: true }> {
+    const suppliers = await this.readSuppliersData();
+    const supplier = suppliers.find((s) => s.code === supplierCode);
+
+    if (!supplier) {
+      throw new NotFoundException('Поставщик не найден');
+    }
+
+    if (supplier.items.some((i: any) => i.barcode === item.barcode)) {
+      throw new BadRequestException(
+        'Товар с таким штрихкодом уже есть у этого поставщика',
+      );
+    }
+
+    supplier.items.push({
+      barcode: item.barcode,
+      name: item.name,
+      price: item.price,
+      isActive: true,
+      source: 'manual',
+    });
+
+    await this.writeSuppliersData(suppliers);
+    return { ok: true };
+  }
+
+  async updateSupplierItem(
+    supplierCode: string,
+    oldBarcode: string,
+    data: { barcode?: string; name?: string; price?: number },
+  ): Promise<{ ok: true }> {
+    const suppliers = await this.readSuppliersData();
+    const supplier = suppliers.find((s) => s.code === supplierCode);
+
+    if (!supplier) {
+      throw new NotFoundException('Поставщик не найден');
+    }
+
+    const item = supplier.items.find((i: any) => i.barcode === oldBarcode);
+
+    if (!item) {
+      throw new NotFoundException('Товар не найден');
+    }
+
+    if (
+      data.barcode !== undefined &&
+      data.barcode !== oldBarcode &&
+      supplier.items.some((i: any) => i.barcode === data.barcode)
+    ) {
+      throw new BadRequestException(
+        'Товар с таким штрихкодом уже есть у этого поставщика',
+      );
+    }
+
+    if (data.barcode !== undefined) item.barcode = data.barcode;
+    if (data.name !== undefined) item.name = data.name;
+    if (data.price !== undefined) item.price = data.price;
+
+    await this.writeSuppliersData(suppliers);
+    return { ok: true };
+  }
+
+  async deleteSupplierItem(
+    supplierCode: string,
+    barcode: string,
+  ): Promise<{ ok: true }> {
+    const suppliers = await this.readSuppliersData();
+    const supplier = suppliers.find((s) => s.code === supplierCode);
+
+    if (!supplier) {
+      throw new NotFoundException('Поставщик не найден');
+    }
+
+    const idx = supplier.items.findIndex((i: any) => i.barcode === barcode);
+
+    if (idx === -1) {
+      throw new NotFoundException('Товар не найден');
+    }
+
+    supplier.items.splice(idx, 1);
+    await this.writeSuppliersData(suppliers);
+
+    return { ok: true };
   }
 
   async listHistory(): Promise<AutozakazHistoryItem[]> {

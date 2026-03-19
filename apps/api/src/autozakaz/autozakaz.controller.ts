@@ -7,6 +7,7 @@ import {
   Param,
   ParseFilePipeBuilder,
   Post,
+  Put,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -28,6 +29,71 @@ export class AutozakazController {
   @Get('suppliers')
   async suppliers() {
     return this.autozakazService.getSuppliers();
+  }
+
+  @Post('suppliers')
+  async createSupplier(@Body() body: { name: string }) {
+    if (!body.name?.trim()) {
+      throw new BadRequestException('Название поставщика обязательно');
+    }
+    return this.autozakazService.createSupplier({ name: body.name.trim() });
+  }
+
+  @Put('suppliers/:code')
+  async updateSupplier(
+    @Param('code') code: string,
+    @Body() body: { name: string },
+  ) {
+    if (!body.name?.trim()) {
+      throw new BadRequestException('Название поставщика обязательно');
+    }
+    return this.autozakazService.updateSupplier(code, {
+      name: body.name.trim(),
+    });
+  }
+
+  @Delete('suppliers/:code')
+  async deleteSupplier(@Param('code') code: string) {
+    return this.autozakazService.deleteSupplier(code);
+  }
+
+  @Post('suppliers/:code/items')
+  async addItem(
+    @Param('code') code: string,
+    @Body() body: { barcode: string; name: string; price: number },
+  ) {
+    if (!body.barcode?.trim()) {
+      throw new BadRequestException('Штрихкод обязателен');
+    }
+    if (!body.name?.trim()) {
+      throw new BadRequestException('Название товара обязательно');
+    }
+    return this.autozakazService.addSupplierItem(code, {
+      barcode: body.barcode.trim(),
+      name: body.name.trim(),
+      price: Number(body.price) || 0,
+    });
+  }
+
+  @Put('suppliers/:code/items/:barcode')
+  async updateItem(
+    @Param('code') code: string,
+    @Param('barcode') barcode: string,
+    @Body() body: { barcode?: string; name?: string; price?: number },
+  ) {
+    return this.autozakazService.updateSupplierItem(code, barcode, {
+      barcode: body.barcode?.trim(),
+      name: body.name?.trim(),
+      price: body.price !== undefined ? Number(body.price) : undefined,
+    });
+  }
+
+  @Delete('suppliers/:code/items/:barcode')
+  async deleteItem(
+    @Param('code') code: string,
+    @Param('barcode') barcode: string,
+  ) {
+    return this.autozakazService.deleteSupplierItem(code, barcode);
   }
 
   @Get('history')

@@ -478,6 +478,31 @@ export default function HomePage() {
   const [suppliersLoading, setSuppliersLoading] = useState(false);
   const [suppliersError, setSuppliersError] = useState('');
 
+  const [selectedSupplierCode, setSelectedSupplierCode] = useState<
+    string | null
+  >(null);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [supplierModalMode, setSupplierModalMode] = useState<
+    'create' | 'edit'
+  >('create');
+  const [supplierFormName, setSupplierFormName] = useState('');
+  const [supplierFormCode, setSupplierFormCode] = useState('');
+
+  const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [itemModalMode, setItemModalMode] = useState<'create' | 'edit'>(
+    'create',
+  );
+  const [itemFormBarcode, setItemFormBarcode] = useState('');
+  const [itemFormName, setItemFormName] = useState('');
+  const [itemFormPrice, setItemFormPrice] = useState('');
+  const [itemEditOriginalBarcode, setItemEditOriginalBarcode] = useState('');
+
+  const [deleteConfirmType, setDeleteConfirmType] = useState<
+    'supplier' | 'item' | null
+  >(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState('');
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+
   const change = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => ({
       ...prev,
@@ -566,15 +591,173 @@ export default function HomePage() {
     }
   }, []);
 
+  const selectedSupplier =
+    suppliers.find((s) => s.code === selectedSupplierCode) || null;
+
+  function openCreateSupplier() {
+    setSupplierFormName('');
+    setSupplierModalMode('create');
+    setSupplierModalOpen(true);
+  }
+
+  function openEditSupplier(supplier: SupplierSeed) {
+    setSupplierFormName(supplier.name);
+    setSupplierFormCode(supplier.code);
+    setSupplierModalMode('edit');
+    setSupplierModalOpen(true);
+  }
+
+  async function handleSaveSupplier() {
+    const name = supplierFormName.trim();
+    if (!name) return;
+    setSuppliersError('');
+
+    try {
+      if (supplierModalMode === 'create') {
+        const resp = await fetch(`${API_URL}/autozakaz/suppliers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!resp.ok) throw new Error(await readApiError(resp));
+      } else {
+        const resp = await fetch(
+          `${API_URL}/autozakaz/suppliers/${supplierFormCode}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+          },
+        );
+        if (!resp.ok) throw new Error(await readApiError(resp));
+      }
+      setSupplierModalOpen(false);
+      await loadSuppliers();
+    } catch (e) {
+      setSuppliersError(
+        e instanceof Error ? e.message : 'Ошибка сохранения поставщика',
+      );
+    }
+  }
+
+  function requestDeleteSupplier(supplier: SupplierSeed) {
+    setDeleteConfirmType('supplier');
+    setDeleteConfirmTarget(supplier.code);
+    setDeleteConfirmName(supplier.name);
+  }
+
+  async function confirmDelete() {
+    if (deleteConfirmType === 'supplier') {
+      try {
+        const resp = await fetch(
+          `${API_URL}/autozakaz/suppliers/${deleteConfirmTarget}`,
+          { method: 'DELETE' },
+        );
+        if (!resp.ok) throw new Error(await readApiError(resp));
+        if (selectedSupplierCode === deleteConfirmTarget) {
+          setSelectedSupplierCode(null);
+        }
+        setDeleteConfirmType(null);
+        await loadSuppliers();
+      } catch (e) {
+        setSuppliersError(
+          e instanceof Error ? e.message : 'Ошибка удаления поставщика',
+        );
+        setDeleteConfirmType(null);
+      }
+    } else if (deleteConfirmType === 'item' && selectedSupplierCode) {
+      try {
+        const resp = await fetch(
+          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(deleteConfirmTarget)}`,
+          { method: 'DELETE' },
+        );
+        if (!resp.ok) throw new Error(await readApiError(resp));
+        setDeleteConfirmType(null);
+        await loadSuppliers();
+      } catch (e) {
+        setSuppliersError(
+          e instanceof Error ? e.message : 'Ошибка удаления товара',
+        );
+        setDeleteConfirmType(null);
+      }
+    }
+  }
+
+  function openCreateItem() {
+    setItemFormBarcode('');
+    setItemFormName('');
+    setItemFormPrice('');
+    setItemModalMode('create');
+    setItemModalOpen(true);
+  }
+
+  function openEditItem(item: {
+    barcode: string;
+    name: string;
+    price: number;
+  }) {
+    setItemFormBarcode(item.barcode);
+    setItemFormName(item.name);
+    setItemFormPrice(String(item.price));
+    setItemEditOriginalBarcode(item.barcode);
+    setItemModalMode('edit');
+    setItemModalOpen(true);
+  }
+
+  async function handleSaveItem() {
+    if (!selectedSupplierCode) return;
+    const barcode = itemFormBarcode.trim();
+    const name = itemFormName.trim();
+    const price = parseFloat(itemFormPrice) || 0;
+    if (!barcode || !name) return;
+    setSuppliersError('');
+
+    try {
+      if (itemModalMode === 'create') {
+        const resp = await fetch(
+          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ barcode, name, price }),
+          },
+        );
+        if (!resp.ok) throw new Error(await readApiError(resp));
+      } else {
+        const resp = await fetch(
+          `${API_URL}/autozakaz/suppliers/${selectedSupplierCode}/items/${encodeURIComponent(itemEditOriginalBarcode)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ barcode, name, price }),
+          },
+        );
+        if (!resp.ok) throw new Error(await readApiError(resp));
+      }
+      setItemModalOpen(false);
+      await loadSuppliers();
+    } catch (e) {
+      setSuppliersError(
+        e instanceof Error ? e.message : 'Ошибка сохранения товара',
+      );
+    }
+  }
+
+  function requestDeleteItem(item: { barcode: string; name: string }) {
+    setDeleteConfirmType('item');
+    setDeleteConfirmTarget(item.barcode);
+    setDeleteConfirmName(item.name);
+  }
+
   useEffect(() => {
     if (activePage === 'history') {
       void loadHistory();
     }
 
-    if (activePage === 'suppliers' && suppliers.length === 0) {
+    if (activePage === 'suppliers') {
       void loadSuppliers();
     }
-  }, [activePage, loadHistory, loadSuppliers, suppliers.length]);
+  }, [activePage, loadHistory, loadSuppliers]);
 
   async function handleClearHistory() {
     const confirmed = window.confirm(
@@ -975,45 +1158,349 @@ export default function HomePage() {
           </>
         )}
 
-        {activePage === 'suppliers' && (
+        {activePage === 'suppliers' && !selectedSupplierCode && (
           <>
             <div className="workspace-header">
               <div>
                 <h1>Поставщики</h1>
                 <p className="muted">
-                  Пока это встроенные тестовые поставщики, чтобы гонять прототип
-                  без стека авторизации.
+                  Управление поставщиками и их каталогами товаров
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => void loadSuppliers()}
-              >
-                Обновить
-              </button>
+              <div className="header-actions">
+                <button
+                  type="button"
+                  className="primary-button compact-btn"
+                  onClick={openCreateSupplier}
+                >
+                  + Добавить поставщика
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void loadSuppliers()}
+                >
+                  Обновить
+                </button>
+              </div>
             </div>
 
-            {suppliersError && <div className="error-box">{suppliersError}</div>}
+            {suppliersError && (
+              <div className="error-box">{suppliersError}</div>
+            )}
             {suppliersLoading && (
               <div className="card">Загружаю поставщиков…</div>
             )}
 
-            {!suppliersLoading && (
+            {!suppliersLoading && suppliers.length === 0 && (
+              <div className="card">
+                Поставщиков пока нет. Нажмите «Добавить поставщика», чтобы
+                создать первого.
+              </div>
+            )}
+
+            {!suppliersLoading && suppliers.length > 0 && (
               <div className="suppliers-grid">
                 {suppliers.map((supplier) => (
-                  <div key={supplier.code} className="card">
-                    <h3>{supplier.name}</h3>
-                    <div className="muted">{supplier.code}</div>
-                    <div className="supplier-stats">
-                      Позиций в каталоге: {supplier.items.length}
+                  <div key={supplier.code} className="card sup-card">
+                    <div className="sup-card-top">
+                      <h3>{supplier.name}</h3>
+                      <div className="muted">{supplier.code}</div>
+                    </div>
+                    <div className="sup-card-stat">
+                      {supplier.items.length}{' '}
+                      {supplier.items.length === 1
+                        ? 'товар'
+                        : supplier.items.length < 5
+                          ? 'товара'
+                          : 'товаров'}
+                    </div>
+                    <div className="sup-card-actions">
+                      <button
+                        type="button"
+                        className="action-btn action-open"
+                        onClick={() =>
+                          setSelectedSupplierCode(supplier.code)
+                        }
+                      >
+                        Открыть
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn action-edit"
+                        onClick={() => openEditSupplier(supplier)}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn action-delete"
+                        onClick={() => requestDeleteSupplier(supplier)}
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </>
+        )}
+
+        {activePage === 'suppliers' && selectedSupplierCode && (
+          <>
+            <div className="workspace-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button
+                  type="button"
+                  className="back-btn"
+                  onClick={() => setSelectedSupplierCode(null)}
+                >
+                  ←
+                </button>
+                <div>
+                  <h1>{selectedSupplier?.name || 'Поставщик'}</h1>
+                  <p className="muted">
+                    {selectedSupplierCode} ·{' '}
+                    {selectedSupplier?.items.length ?? 0} товаров в каталоге
+                  </p>
+                </div>
+              </div>
+
+              <div className="header-actions">
+                <button
+                  type="button"
+                  className="primary-button compact-btn"
+                  onClick={openCreateItem}
+                >
+                  + Добавить товар
+                </button>
+                {selectedSupplier && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => openEditSupplier(selectedSupplier)}
+                  >
+                    Изменить название
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {suppliersError && (
+              <div className="error-box">{suppliersError}</div>
+            )}
+
+            {selectedSupplier && selectedSupplier.items.length === 0 && (
+              <div className="card">
+                Каталог пуст. Нажмите «Добавить товар», чтобы начать
+                наполнение.
+              </div>
+            )}
+
+            {selectedSupplier && selectedSupplier.items.length > 0 && (
+              <div className="card">
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Штрихкод</th>
+                        <th>Название</th>
+                        <th>Цена</th>
+                        <th>Статус</th>
+                        <th style={{ textAlign: 'right' }}>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSupplier.items.map((item) => (
+                        <tr key={item.barcode}>
+                          <td className="mono-cell">{item.barcode}</td>
+                          <td>{item.name}</td>
+                          <td>{item.price.toFixed(2)} ₽</td>
+                          <td>
+                            <span
+                              className={
+                                item.isActive !== false
+                                  ? 'item-badge item-active'
+                                  : 'item-badge item-inactive'
+                              }
+                            >
+                              {item.isActive !== false
+                                ? 'Активен'
+                                : 'Неактивен'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div className="row-actions">
+                              <button
+                                type="button"
+                                className="action-btn action-edit"
+                                onClick={() => openEditItem(item)}
+                              >
+                                Изменить
+                              </button>
+                              <button
+                                type="button"
+                                className="action-btn action-delete"
+                                onClick={() => requestDeleteItem(item)}
+                              >
+                                Удалить
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {supplierModalOpen && (
+          <div
+            className="modal-overlay"
+            onClick={() => setSupplierModalOpen(false)}
+          >
+            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+              <h2>
+                {supplierModalMode === 'create'
+                  ? 'Новый поставщик'
+                  : 'Редактирование поставщика'}
+              </h2>
+              <label>
+                Название
+                <input
+                  type="text"
+                  value={supplierFormName}
+                  onChange={(e) => setSupplierFormName(e.target.value)}
+                  placeholder="Введите название поставщика"
+                  autoFocus
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setSupplierModalOpen(false)}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="primary-button compact-btn"
+                  onClick={() => void handleSaveSupplier()}
+                  disabled={!supplierFormName.trim()}
+                >
+                  {supplierModalMode === 'create' ? 'Создать' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {itemModalOpen && (
+          <div
+            className="modal-overlay"
+            onClick={() => setItemModalOpen(false)}
+          >
+            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+              <h2>
+                {itemModalMode === 'create'
+                  ? 'Новый товар'
+                  : 'Редактирование товара'}
+              </h2>
+              <label>
+                Штрихкод
+                <input
+                  type="text"
+                  value={itemFormBarcode}
+                  onChange={(e) => setItemFormBarcode(e.target.value)}
+                  placeholder="Введите штрихкод"
+                  autoFocus
+                />
+              </label>
+              <label>
+                Название
+                <input
+                  type="text"
+                  value={itemFormName}
+                  onChange={(e) => setItemFormName(e.target.value)}
+                  placeholder="Введите название товара"
+                />
+              </label>
+              <label>
+                Цена
+                <input
+                  type="number"
+                  step="0.01"
+                  value={itemFormPrice}
+                  onChange={(e) => setItemFormPrice(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setItemModalOpen(false)}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="primary-button compact-btn"
+                  onClick={() => void handleSaveItem()}
+                  disabled={
+                    !itemFormBarcode.trim() || !itemFormName.trim()
+                  }
+                >
+                  {itemModalMode === 'create' ? 'Добавить' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirmType && (
+          <div
+            className="modal-overlay"
+            onClick={() => setDeleteConfirmType(null)}
+          >
+            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+              <h2>Подтверждение удаления</h2>
+              <p>
+                Вы уверены, что хотите удалить{' '}
+                {deleteConfirmType === 'supplier'
+                  ? 'поставщика'
+                  : 'товар'}{' '}
+                <strong>«{deleteConfirmName}»</strong>?
+              </p>
+              {deleteConfirmType === 'supplier' && (
+                <p className="muted">
+                  Все товары из каталога этого поставщика также будут удалены.
+                </p>
+              )}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setDeleteConfirmType(null)}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => void confirmDelete()}
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
@@ -1364,6 +1851,169 @@ export default function HomePage() {
         .supplier-stats {
           margin-top: 10px;
           color: #cbd5e1;
+        }
+
+        .header-actions {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-shrink: 0;
+        }
+
+        .compact-btn {
+          width: auto;
+          padding: 10px 16px;
+          white-space: nowrap;
+        }
+
+        .sup-card {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .sup-card-top h3 {
+          margin: 0 0 4px 0;
+        }
+
+        .sup-card-stat {
+          color: #94a3b8;
+          font-size: 14px;
+          margin-top: 4px;
+        }
+
+        .sup-card-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 8px;
+          flex-wrap: wrap;
+        }
+
+        .action-btn {
+          padding: 7px 14px;
+          border-radius: 10px;
+          border: none;
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 600;
+          transition: background 0.15s, opacity 0.15s;
+        }
+
+        .action-open {
+          background: rgba(96, 165, 250, 0.15);
+          color: #93c5fd;
+        }
+
+        .action-open:hover {
+          background: rgba(96, 165, 250, 0.25);
+        }
+
+        .action-edit {
+          background: rgba(250, 204, 21, 0.12);
+          color: #fde68a;
+        }
+
+        .action-edit:hover {
+          background: rgba(250, 204, 21, 0.22);
+        }
+
+        .action-delete {
+          background: rgba(239, 68, 68, 0.12);
+          color: #fca5a5;
+        }
+
+        .action-delete:hover {
+          background: rgba(239, 68, 68, 0.22);
+        }
+
+        .row-actions {
+          display: flex;
+          gap: 6px;
+          justify-content: flex-end;
+        }
+
+        .back-btn {
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: #1f2937;
+          color: #e5e7eb;
+          font-size: 20px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: background 0.15s;
+        }
+
+        .back-btn:hover {
+          background: #334155;
+        }
+
+        .mono-cell {
+          font-family: 'SF Mono', 'Fira Code', monospace;
+          font-size: 13px;
+          letter-spacing: 0.3px;
+        }
+
+        .item-badge {
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .item-active {
+          background: rgba(34, 197, 94, 0.15);
+          color: #86efac;
+        }
+
+        .item-inactive {
+          background: rgba(148, 163, 184, 0.15);
+          color: #94a3b8;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          animation: fadeIn 0.15s ease;
+        }
+
+        .modal-box {
+          background: #1e293b;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 20px;
+          padding: 28px;
+          max-width: 440px;
+          width: 90%;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .modal-box h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .modal-box p {
+          margin: 0;
+          line-height: 1.5;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          margin-top: 8px;
         }
 
         /* --- Format cards grid --- */

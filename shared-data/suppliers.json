@@ -34,7 +34,7 @@
       {
         "barcode": "4610000000045",
         "name": "Мука пшеничная 2 кг",
-        "price": 118.0,
+        "price": 118,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -90,7 +90,7 @@
       {
         "barcode": "4610000000120",
         "name": "Чай черный 100 пакетов",
-        "price": 219.0,
+        "price": 219,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -125,7 +125,7 @@
       {
         "barcode": "4610000000175",
         "name": "Какао-порошок 100 г",
-        "price": 110.0,
+        "price": 110,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -194,7 +194,7 @@
       {
         "barcode": "4610000000267",
         "name": "Сыр гауда 200 г",
-        "price": 214.0,
+        "price": 214,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -236,7 +236,7 @@
       {
         "barcode": "4610000000328",
         "name": "Лимонад классический 1 л",
-        "price": 73.0,
+        "price": 73,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -319,7 +319,7 @@
       {
         "barcode": "4610000000434",
         "name": "Сардины в масле 240 г",
-        "price": 119.0,
+        "price": 119,
         "isActive": true,
         "source": "manual_seed"
       },
@@ -410,7 +410,7 @@
       {
         "barcode": "4610000000564",
         "name": "Фисташки соленые 100 г",
-        "price": 156.0,
+        "price": 156,
         "isActive": true,
         "source": "manual_seed"
       },
